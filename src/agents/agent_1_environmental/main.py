@@ -1,495 +1,754 @@
 """
-Data Models for Environmental Intelligence Agent
-=================================================
-Pydantic models for weather data, social media content, spatial analysis,
-and flood predictions.
+Environmental Intelligence Agent - Main Orchestrator
+===================================================
+Agent 1: Real-time environmental monitoring and flood prediction.
+Coordinates data collection, processing, analysis, and prediction.
 
 Author: Environmental Intelligence Team
 Version: 1.0.0
 """
 
-from datetime import datetime
-from enum import Enum
-from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, Field, validator, ConfigDict
-from uuid import UUID, uuid4
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, cast
+import signal
+import sys
+import json
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+import asyncpg
+from redis import asyncio as aioredis
+import uvicorn
+
+# Import all components
+from models import (
+    AgentOutput, SentinelZone, GeoPoint, SeverityLevel,
+    HealthCheckResponse, MonitoringStatus
+)
+from data_collectors import (
+    WeatherAPICollector,
+    SocialMediaCollector,
+    DataCollectionOrchestrator
+)
+from data_processors import (
+    LLMEnrichmentProcessor,
+    WeatherDataNormalizer,
+    SocialMediaAnalyzer,
+    DataProcessingOrchestrator
+)
+from spatial_analyzer import PostGISSpatialAnalyzer
+from predictor import (
+    FloodRiskPredictor,
+    AlertGenerator,
+    PredictionOrchestrator
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('agent_1_environmental.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 # =====================================================================
-# ENUMS
+# CONFIGURATION
 # =====================================================================
 
-class SeverityLevel(str, Enum):
-    """Flood severity classification"""
-    MINIMAL = "minimal"
-    LOW = "low"
-    MODERATE = "moderate"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-class WeatherCondition(str, Enum):
-    """Weather condition types"""
-    CLEAR = "clear"
-    CLOUDS = "clouds"
-    RAIN = "rain"
-    HEAVY_RAIN = "heavy_rain"
-    THUNDERSTORM = "thunderstorm"
-    DRIZZLE = "drizzle"
-    SNOW = "snow"
-    MIST = "mist"
-    FOG = "fog"
-
-
-class DataSource(str, Enum):
-    """Source of environmental data"""
-    OPENWEATHERMAP = "openweathermap"
-    TWITTER = "twitter"
-    SENSOR = "sensor"
-    MANUAL = "manual"
-    PREDICTION = "prediction"
-
-
-class AlertType(str, Enum):
-    """Types of alerts"""
-    WEATHER_WARNING = "weather_warning"
-    FLOOD_RISK = "flood_risk"
-    EVACUATION = "evacuation"
-    ALL_CLEAR = "all_clear"
-
-
-# =====================================================================
-# GEOSPATIAL MODELS
-# =====================================================================
-
-class GeoPoint(BaseModel):
-    """Geographic point with coordinates"""
-    latitude: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
-    longitude: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
+class AgentConfig:
+    """Agent configuration from environment variables"""
     
-    model_config = ConfigDict(json_schema_extra={
-        "example": {
-            "latitude": 23.8103,
-            "longitude": 90.4125
+    def __init__(self):
+        """Load configuration from environment"""
+        import os
+        from dotenv import load_dotenv
+        from pathlib import Path
+    
+        # Debug: Show current directory
+        current_dir = os.getcwd()
+        print(f"🔍 DEBUG: Current directory = {current_dir}")
+    
+        # Debug: Check if .env exists
+        env_path = Path('.env')
+        print(f"🔍 DEBUG: .env exists in current dir = {env_path.exists()}")
+    
+        # Load .env file
+        loaded = load_dotenv()
+        print(f"🔍 DEBUG: load_dotenv() returned = {loaded}")
+    
+        # API Keys
+        self.openweather_api_key = os.getenv('OPENWEATHER_API_KEY')
+        self.twitter_bearer_token = os.getenv('TWITTER_BEARER_TOKEN')
+        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+    
+        # Database
+        self.database_url = os.getenv(
+            'DATABASE_URL',
+            'postgresql://user:password@postgres:5432/disaster_response'
+        )
+    
+    # Debug: Show what DATABASE_URL was loaded
+        print(f"🔍 DEBUG: DATABASE_URL = {self.database_url}")
+    
+        # Redis
+        self.redis_url = os.getenv('REDIS_URL', 'redis://redis:6379')
+    
+        # Agent Settings
+        self.agent_id = os.getenv('AGENT_ID', 'agent_1_environmental')
+        self.monitoring_interval = int(os.getenv('MONITORING_INTERVAL', '300'))
+        self.enable_adaptive_polling = os.getenv('ENABLE_ADAPTIVE_POLLING', 'true').lower() == 'true'
+    
+        # Validate required config
+        self._validate()
+
+        # Tell type checkers these values are non-None after validation
+        self.openweather_api_key = cast(str, self.openweather_api_key)
+        self.twitter_bearer_token = cast(str, self.twitter_bearer_token)
+        self.openai_api_key = cast(str, self.openai_api_key)
+    
+    def _validate(self):
+        """Validate required configuration"""
+        required = {
+            'OPENWEATHER_API_KEY': self.openweather_api_key,
+            'TWITTER_BEARER_TOKEN': self.twitter_bearer_token,
+            'OPENAI_API_KEY': self.openai_api_key
         }
-    })
-
-    def to_wkt(self) -> str:
-        """Convert to Well-Known Text format for PostGIS"""
-        return f"POINT({self.longitude} {self.latitude})"
-    
-    def to_geojson(self) -> Dict[str, Any]:
-        """Convert to GeoJSON format"""
-        return {
-            "type": "Point",
-            "coordinates": [self.longitude, self.latitude]
-        }
-
-
-class BoundingBox(BaseModel):
-    """Geographic bounding box"""
-    north: float = Field(..., ge=-90, le=90)
-    south: float = Field(..., ge=-90, le=90)
-    east: float = Field(..., ge=-180, le=180)
-    west: float = Field(..., ge=-180, le=180)
-    
-    @validator('south')
-    def south_less_than_north(cls, v, values):
-        if 'north' in values and v >= values['north']:
-            raise ValueError('South must be less than north')
-        return v
-    
-    @validator('west')
-    def west_less_than_east(cls, v, values):
-        if 'east' in values and v >= values['east']:
-            raise ValueError('West must be less than east')
-        return v
-
-    def to_wkt(self) -> str:
-        """Convert to Well-Known Text polygon format"""
-        return (f"POLYGON(("
-                f"{self.west} {self.south}, "
-                f"{self.east} {self.south}, "
-                f"{self.east} {self.north}, "
-                f"{self.west} {self.north}, "
-                f"{self.west} {self.south}))")
-
-
-# =====================================================================
-# WEATHER DATA MODELS
-# =====================================================================
-
-class WeatherMetrics(BaseModel):
-    """Core weather measurements"""
-    temperature: float = Field(..., description="Temperature in Celsius")
-    feels_like: float = Field(..., description="Perceived temperature in Celsius")
-    humidity: float = Field(..., ge=0, le=100, description="Humidity percentage")
-    pressure: float = Field(..., description="Atmospheric pressure in hPa")
-    wind_speed: float = Field(..., ge=0, description="Wind speed in m/s")
-    wind_direction: Optional[float] = Field(None, ge=0, le=360, description="Wind direction in degrees")
-    visibility: Optional[float] = Field(None, ge=0, description="Visibility in meters")
-    cloud_coverage: float = Field(..., ge=0, le=100, description="Cloud coverage percentage")
-    
-    model_config = ConfigDict(json_schema_extra={
-        "example": {
-            "temperature": 28.5,
-            "feels_like": 32.0,
-            "humidity": 85,
-            "pressure": 1010,
-            "wind_speed": 3.5,
-            "wind_direction": 180,
-            "visibility": 8000,
-            "cloud_coverage": 75
-        }
-    })
-
-
-class PrecipitationData(BaseModel):
-    """Precipitation measurements"""
-    rain_1h: Optional[float] = Field(None, ge=0, description="Rain volume for last hour in mm")
-    rain_3h: Optional[float] = Field(None, ge=0, description="Rain volume for last 3 hours in mm")
-    rain_24h: Optional[float] = Field(None, ge=0, description="Rain volume for last 24 hours in mm")
-    snow_1h: Optional[float] = Field(None, ge=0, description="Snow volume for last hour in mm")
-    snow_3h: Optional[float] = Field(None, ge=0, description="Snow volume for last 3 hours in mm")
-    intensity: Optional[float] = Field(None, ge=0, description="Current precipitation intensity")
-    
-    @property
-    def total_rain(self) -> float:
-        """Calculate total rain in last 24 hours"""
-        return self.rain_24h or self.rain_3h or self.rain_1h or 0.0
-    
-    @property
-    def is_heavy(self) -> bool:
-        """Check if precipitation is heavy (>7.5mm/hr)"""
-        if self.rain_1h and self.rain_1h > 7.5:
-            return True
-        if self.rain_3h and (self.rain_3h / 3) > 7.5:
-            return True
-        return False
-
-
-class WeatherData(BaseModel):
-    """Complete weather observation data"""
-    id: UUID = Field(default_factory=uuid4)
-    location: GeoPoint
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    condition: WeatherCondition
-    metrics: WeatherMetrics
-    precipitation: PrecipitationData
-    description: str = Field(..., description="Human-readable weather description")
-    source: DataSource = DataSource.OPENWEATHERMAP
-    raw_data: Optional[Dict[str, Any]] = Field(None, description="Original API response")
-    
-    model_config = ConfigDict(json_schema_extra={
-        "example": {
-            "location": {"latitude": 23.8103, "longitude": 90.4125},
-            "condition": "heavy_rain",
-            "metrics": {
-                "temperature": 28.5,
-                "feels_like": 32.0,
-                "humidity": 85,
-                "pressure": 1010,
-                "wind_speed": 3.5,
-                "cloud_coverage": 75
-            },
-            "precipitation": {
-                "rain_1h": 15.5,
-                "rain_3h": 35.0
-            },
-            "description": "Heavy rain with thunderstorms"
-        }
-    })
-
-
-# =====================================================================
-# SOCIAL MEDIA MODELS
-# =====================================================================
-
-class SocialMediaPost(BaseModel):
-    """Social media post with environmental information"""
-    id: UUID = Field(default_factory=uuid4)
-    platform_id: str = Field(..., description="Original post ID from platform")
-    platform: str = Field(default="twitter", description="Social media platform")
-    content: str = Field(..., description="Post content/text")
-    author: str = Field(..., description="Author username")
-    timestamp: datetime
-    location: Optional[GeoPoint] = None
-    hashtags: List[str] = Field(default_factory=list)
-    mentions: List[str] = Field(default_factory=list)
-    media_urls: List[str] = Field(default_factory=list)
-    engagement: Dict[str, int] = Field(default_factory=dict, description="Likes, retweets, etc.")
-    source: DataSource = DataSource.TWITTER
-    raw_data: Optional[Dict[str, Any]] = None
-
-
-class EnrichedSocialPost(SocialMediaPost):
-    """Social media post enriched with LLM analysis"""
-    enriched_at: datetime = Field(default_factory=datetime.utcnow)
-    relevance_score: float = Field(..., ge=0, le=1, description="Relevance to flooding (0-1)")
-    sentiment: str = Field(..., description="Sentiment: positive, negative, neutral, urgent")
-    extracted_locations: List[str] = Field(default_factory=list)
-    severity_indicators: List[str] = Field(default_factory=list)
-    flood_keywords: List[str] = Field(default_factory=list)
-    llm_summary: str = Field(..., description="LLM-generated summary")
-    contains_flood_report: bool = Field(default=False)
-    credibility_score: float = Field(..., ge=0, le=1, description="Estimated credibility (0-1)")
-
-
-# =====================================================================
-# SPATIAL ANALYSIS MODELS
-# =====================================================================
-
-class SentinelZone(BaseModel):
-    """High-risk monitoring zone"""
-    id: UUID = Field(default_factory=uuid4)
-    name: str
-    center: GeoPoint
-    radius_km: float = Field(..., gt=0, description="Monitoring radius in kilometers")
-    risk_level: SeverityLevel
-    population_density: Optional[int] = Field(None, description="People per sq km")
-    elevation: Optional[float] = Field(None, description="Average elevation in meters")
-    drainage_capacity: Optional[str] = Field(None, description="Poor, moderate, good, excellent")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_monitored: Optional[datetime] = None
-    
-    def get_bounding_box(self) -> BoundingBox:
-        """Calculate bounding box for the zone"""
-        # Approximate: 1 degree ≈ 111 km
-        lat_offset = self.radius_km / 111.0
-        lon_offset = self.radius_km / (111.0 * abs(self.center.latitude))
         
-        return BoundingBox(
-            north=self.center.latitude + lat_offset,
-            south=self.center.latitude - lat_offset,
-            east=self.center.longitude + lon_offset,
-            west=self.center.longitude - lon_offset
+        missing = [k for k, v in required.items() if not v]
+        if missing:
+            raise ValueError(f"Missing required configuration: {', '.join(missing)}")
+
+
+# =====================================================================
+# ENVIRONMENTAL INTELLIGENCE AGENT
+# =====================================================================
+
+class EnvironmentalIntelligenceAgent:
+    """
+    Main agent class coordinating all environmental monitoring operations.
+    Implements adaptive polling, prediction, and alert generation.
+    """
+    
+    def __init__(self, config: AgentConfig):
+        """
+        Initialize the agent with all components.
+        
+        Args:
+            config: Agent configuration
+        """
+        self.config = config
+        self.running = False
+        self.monitoring_task: Optional[asyncio.Task] = None
+        
+        # Component instances (initialized in startup)
+        self.db_pool: Optional[asyncpg.Pool] = None
+        self.redis_client: Optional[aioredis.Redis] = None
+        self.weather_collector: Optional[WeatherAPICollector] = None
+        self.social_collector: Optional[SocialMediaCollector] = None
+        self.collection_orchestrator: Optional[DataCollectionOrchestrator] = None
+        self.llm_processor: Optional[LLMEnrichmentProcessor] = None
+        self.weather_normalizer: Optional[WeatherDataNormalizer] = None
+        self.social_analyzer: Optional[SocialMediaAnalyzer] = None
+        self.processing_orchestrator: Optional[DataProcessingOrchestrator] = None
+        self.spatial_analyzer: Optional[PostGISSpatialAnalyzer] = None
+        self.flood_predictor: Optional[FloodRiskPredictor] = None
+        self.alert_generator: Optional[AlertGenerator] = None
+        self.prediction_orchestrator: Optional[PredictionOrchestrator] = None
+        
+        # Sentinel zones (loaded from database or config)
+        self.sentinel_zones: List[SentinelZone] = []
+        
+        # Latest output
+        self.latest_output: Optional[AgentOutput] = None
+        self.last_update: Optional[datetime] = None
+        
+        logger.info(f"Agent {config.agent_id} initialized")
+    
+    async def startup(self):
+        """Initialize all components and connections"""
+        logger.info("Starting up Environmental Intelligence Agent...")
+        
+        try:
+            # Initialize database connection pool
+            self.db_pool = await asyncpg.create_pool(
+                self.config.database_url,
+                min_size=5,
+                max_size=20
+            )
+            logger.info("Database connection pool created")
+            
+            # Initialize Redis
+            self.redis_client = await aioredis.from_url(
+                self.config.redis_url,
+                decode_responses=True
+            )
+            logger.info("Redis connection established")
+            
+            # Initialize data collectors
+            self.weather_collector = WeatherAPICollector(
+                api_key=cast(str, self.config.openweather_api_key),
+                cache_client=self.redis_client
+            )
+            
+            self.social_collector = SocialMediaCollector(
+                bearer_token=cast(str, self.config.twitter_bearer_token),
+                cache_client=self.redis_client
+            )
+            
+            self.collection_orchestrator = DataCollectionOrchestrator(
+                weather_collector=self.weather_collector,
+                social_collector=self.social_collector
+            )
+            logger.info("Data collectors initialized")
+            
+            # Initialize data processors
+            self.llm_processor = LLMEnrichmentProcessor(
+                api_key=cast(str, self.config.openai_api_key)
+            )
+            
+            self.weather_normalizer = WeatherDataNormalizer()
+            self.social_analyzer = SocialMediaAnalyzer()
+            
+            self.processing_orchestrator = DataProcessingOrchestrator(
+                llm_processor=self.llm_processor,
+                weather_normalizer=self.weather_normalizer,
+                social_analyzer=self.social_analyzer
+            )
+            logger.info("Data processors initialized")
+            
+            # Initialize spatial analyzer
+            self.spatial_analyzer = PostGISSpatialAnalyzer(
+                db_pool=cast(asyncpg.Pool, self.db_pool)
+            )
+            await self.spatial_analyzer.initialize_schema()
+            logger.info("Spatial analyzer initialized")
+            
+            # Initialize predictors
+            self.flood_predictor = FloodRiskPredictor()
+            self.alert_generator = AlertGenerator()
+            
+            self.prediction_orchestrator = PredictionOrchestrator(
+                predictor=self.flood_predictor,
+                alert_generator=self.alert_generator
+            )
+            logger.info("Prediction system initialized")
+            
+            # Load sentinel zones
+            await self.load_sentinel_zones()
+            
+            logger.info("✅ Agent startup complete")
+            
+        except Exception as e:
+            logger.error(f"Startup failed: {e}", exc_info=True)
+            await self.shutdown()
+            raise
+    
+    async def shutdown(self):
+        """Cleanup and close all connections"""
+        logger.info("Shutting down Environmental Intelligence Agent...")
+        
+        self.running = False
+        
+        # Cancel monitoring task
+        if self.monitoring_task and not self.monitoring_task.done():
+            self.monitoring_task.cancel()
+            try:
+                await self.monitoring_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Close connections
+        if self.db_pool:
+            await self.db_pool.close()
+            logger.info("Database pool closed")
+        
+        if self.redis_client:
+            await self.redis_client.close()
+            logger.info("Redis connection closed")
+        
+        logger.info("✅ Agent shutdown complete")
+    
+    async def load_sentinel_zones(self):
+        """Load sentinel zones from database or create default zones"""
+        # Try to load from database
+        if self.db_pool is None:
+            logger.error("Database pool is not initialized.")
+            # Create default zones for Dhaka
+            self.sentinel_zones = self._create_default_zones()
+            # Store in database if possible
+            if self.spatial_analyzer is not None:
+                for zone in self.sentinel_zones:
+                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_sentinel_zone(zone)
+            logger.info(f"Created {len(self.sentinel_zones)} default sentinel zones")
+            return
+
+        async with self.db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM sentinel_zones;")
+            
+            if rows:
+                # Load existing zones
+                self.sentinel_zones = [
+                    SentinelZone(
+                        id=row['id'],
+                        name=row['name'],
+                        center=GeoPoint(
+                            latitude=await conn.fetchval(
+                                "SELECT ST_Y($1::geometry);", row['center']
+                            ),
+                            longitude=await conn.fetchval(
+                                "SELECT ST_X($1::geometry);", row['center']
+                            )
+                        ),
+                        radius_km=row['radius_km'],
+                        risk_level=SeverityLevel(row['risk_level']),
+                        population_density=row['population_density'],
+                        elevation=row['elevation'],
+                        drainage_capacity=row['drainage_capacity'],
+                        created_at=row['created_at'],
+                        last_monitored=row['last_monitored']
+                    )
+                    for row in rows
+                ]
+                logger.info(f"Loaded {len(self.sentinel_zones)} sentinel zones from database")
+            else:
+                # Create default zones for Dhaka
+                self.sentinel_zones = self._create_default_zones()
+                
+                # Store in database
+                for zone in self.sentinel_zones:
+                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_sentinel_zone(zone)
+                
+                logger.info(f"Created {len(self.sentinel_zones)} default sentinel zones")
+    
+    def _create_default_zones(self) -> List[SentinelZone]:
+        """Create default sentinel zones for Dhaka, Bangladesh"""
+        return [
+            SentinelZone(
+                name="Dhaka Central",
+                center=GeoPoint(latitude=23.8103, longitude=90.4125),
+                radius_km=5.0,
+                risk_level=SeverityLevel.MODERATE,
+                population_density=45000,
+                elevation=6.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Mirpur",
+                center=GeoPoint(latitude=23.8223, longitude=90.3654),
+                radius_km=4.0,
+                risk_level=SeverityLevel.HIGH,
+                population_density=52000,
+                elevation=4.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Gulshan",
+                center=GeoPoint(latitude=23.7806, longitude=90.4175),
+                radius_km=3.0,
+                risk_level=SeverityLevel.LOW,
+                population_density=35000,
+                elevation=8.0,
+                drainage_capacity="moderate"
+            ),
+            SentinelZone(
+                name="Mohammadpur",
+                center=GeoPoint(latitude=23.7697, longitude=90.3611),
+                radius_km=4.0,
+                risk_level=SeverityLevel.MODERATE,
+                population_density=48000,
+                elevation=5.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Uttara",
+                center=GeoPoint(latitude=23.8759, longitude=90.3795),
+                radius_km=4.5,
+                risk_level=SeverityLevel.MODERATE,
+                population_density=42000,
+                elevation=7.0,
+                drainage_capacity="moderate"
+            )
+        ]
+    
+    async def run_monitoring_cycle(self) -> AgentOutput:
+        """
+        Execute one complete monitoring cycle.
+        
+        Returns:
+            Agent output with predictions and alerts
+        """
+        cycle_start = datetime.utcnow()
+        logger.info("=" * 60)
+        logger.info("Starting monitoring cycle")
+        
+        try:
+            # Step 1: Collect data from all sources
+            logger.info("Step 1: Collecting data...")
+            assert self.collection_orchestrator is not None, "DataCollectionOrchestrator not initialized"
+            collected_data = await self.collection_orchestrator.collect_all_zones(
+                self.sentinel_zones
+            )
+            
+            # Step 2: Process and enrich data
+            logger.info("Step 2: Processing and enriching data...")
+            assert self.processing_orchestrator is not None, "DataProcessingOrchestrator not initialized"
+            processed_data = await self.processing_orchestrator.process_all_zones(
+                collected_data
+            )
+            
+            # Step 3: Perform spatial analysis
+            logger.info("Step 3: Performing spatial analysis...")
+            assert self.spatial_analyzer is not None, "Spatial analyzer not initialized"
+            spatial_results = {}
+            for data in processed_data:
+                zone = data['zone']
+                
+                # Store weather and social data
+                if data.get('weather'):
+                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_weather_data(
+                        data['weather'],
+                        str(zone.id)
+                    )
+                
+                for post in data.get('enriched_posts', []):
+                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_social_post(
+                        post,
+                        str(zone.id)
+                    )
+                
+                # Perform spatial analysis
+                spatial_result = await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).analyze_zone_spatial_patterns(
+                    zone
+                )
+                spatial_results[str(zone.id)] = spatial_result
+                
+                # Add spatial result to processed data
+                data['spatial_analysis'] = spatial_result
+            
+            # Step 4: Get historical risk scores
+            logger.info("Step 4: Retrieving historical risk scores...")
+            historical_risks = {}
+            for zone in self.sentinel_zones:
+                risk = await self.spatial_analyzer.get_historical_risk_score(zone)
+                historical_risks[str(zone.id)] = risk
+            
+            # Step 5: Generate predictions and alerts
+            logger.info("Step 5: Generating predictions and alerts...")
+            assert self.prediction_orchestrator is not None, "PredictionOrchestrator not initialized"
+            predictions, alerts = await self.prediction_orchestrator.predict_all_zones(
+                processed_data,
+                historical_risks
+            )
+            
+            # Step 6: Store predictions in database
+            logger.info("Step 6: Storing predictions...")
+            for prediction in predictions:
+                if self.db_pool is None:
+                    logger.error("Database pool is not initialized.")
+                    continue
+                async with self.db_pool.acquire() as conn:
+                    await conn.execute("""
+                        INSERT INTO flood_predictions (
+                            id, zone_id, timestamp, risk_score, severity_level,
+                            confidence, time_to_impact_hours, affected_area_km2,
+                            risk_factors, recommended_actions
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+                    """,
+                        prediction.id,
+                        prediction.zone.id,
+                        prediction.timestamp,
+                        prediction.risk_score,
+                        prediction.severity_level.value,
+                        prediction.confidence,
+                        prediction.time_to_impact_hours,
+                        prediction.affected_area_km2,
+                        prediction.risk_factors.model_dump_json(),
+                        json.dumps(prediction.recommended_actions)
+                    )
+            
+            # Update zone monitoring timestamps
+            for zone in self.sentinel_zones:
+                zone.last_monitored = datetime.utcnow()
+                await self.spatial_analyzer.store_sentinel_zone(zone)
+            
+            # Calculate processing time
+            processing_time = (datetime.utcnow() - cycle_start).total_seconds()
+            
+            # Determine next update interval (adaptive polling)
+            next_update = self._calculate_next_update_interval(predictions)
+            
+            # Create agent output
+            output = AgentOutput(
+                agent_id=self.config.agent_id,
+                timestamp=datetime.utcnow(),
+                predictions=predictions,
+                alerts=alerts,
+                monitored_zones=self.sentinel_zones,
+                data_sources_status={
+                    'weather_api': 'operational',
+                    'social_media': 'operational',
+                    'spatial_db': 'operational'
+                },
+                processing_time_seconds=processing_time,
+                next_update_in_seconds=next_update
+            )
+            
+            # Store as latest output
+            self.latest_output = output
+            self.last_update = datetime.utcnow()
+            
+            # Log summary
+            logger.info(f"✅ Monitoring cycle complete in {processing_time:.2f}s")
+            logger.info(f"   Predictions: {len(predictions)}")
+            logger.info(f"   Alerts: {len(alerts)} ({len(output.critical_alerts)} critical)")
+            logger.info(f"   Next update in: {next_update}s")
+            logger.info("=" * 60)
+            
+            return output
+        
+        except Exception as e:
+            logger.error(f"Error in monitoring cycle: {e}", exc_info=True)
+            raise
+    
+    def _calculate_next_update_interval(
+        self,
+        predictions: List
+    ) -> float:
+        """Calculate adaptive polling interval based on predictions"""
+        if not self.config.enable_adaptive_polling:
+            return self.config.monitoring_interval
+        
+        # Find highest risk level
+        max_severity = SeverityLevel.MINIMAL
+        for pred in predictions:
+            if pred.severity_level.value > max_severity.value:
+                max_severity = pred.severity_level
+        
+        # Map severity to interval
+        intervals = {
+            SeverityLevel.CRITICAL: 60,      # 1 minute
+            SeverityLevel.HIGH: 180,         # 3 minutes
+            SeverityLevel.MODERATE: 300,     # 5 minutes
+            SeverityLevel.LOW: 900,          # 15 minutes
+            SeverityLevel.MINIMAL: 1800      # 30 minutes
+        }
+        
+        return intervals.get(max_severity, self.config.monitoring_interval)
+    
+    async def start_monitoring(self):
+        """Start continuous monitoring loop"""
+        self.running = True
+        logger.info("Starting continuous monitoring...")
+        
+        while self.running:
+            try:
+                # Run monitoring cycle
+                output = await self.run_monitoring_cycle()
+                
+                # Wait for next update
+                await asyncio.sleep(output.next_update_in_seconds)
+                
+            except asyncio.CancelledError:
+                logger.info("Monitoring task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in monitoring loop: {e}", exc_info=True)
+                # Wait before retrying
+                await asyncio.sleep(60)
+    
+    def get_status(self) -> MonitoringStatus:
+        """Get current monitoring status"""
+        if not self.latest_output:
+            return MonitoringStatus(
+                active_zones=len(self.sentinel_zones),
+                total_predictions=0,
+                critical_alerts=0,
+                last_update=datetime.utcnow(),
+                next_update=datetime.utcnow(),
+                data_freshness_seconds=float('inf')
+            )
+        
+        freshness = (
+            datetime.utcnow() - self.last_update
+        ).total_seconds() if self.last_update else 0
+        
+        return MonitoringStatus(
+            active_zones=len(self.sentinel_zones),
+            total_predictions=len(self.latest_output.predictions),
+            critical_alerts=len(self.latest_output.critical_alerts),
+            last_update=self.last_update or datetime.utcnow(),
+            next_update=(self.last_update or datetime.utcnow()) + 
+                       timedelta(seconds=self.latest_output.next_update_in_seconds),
+            data_freshness_seconds=freshness
         )
 
 
-class SpatialAnalysisResult(BaseModel):
-    """Result of geospatial analysis"""
-    id: UUID = Field(default_factory=uuid4)
-    zone: SentinelZone
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    affected_area_km2: float = Field(..., ge=0)
-    nearby_reports_count: int = Field(..., ge=0)
-    average_severity: float = Field(..., ge=0, le=1)
-    risk_clusters: List[GeoPoint] = Field(default_factory=list)
-    affected_population_estimate: Optional[int] = None
-    critical_infrastructure_at_risk: List[str] = Field(default_factory=list)
+# =====================================================================
+# FASTAPI APPLICATION
+# =====================================================================
+
+# Global agent instance
+agent: Optional[EnvironmentalIntelligenceAgent] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context manager"""
+    global agent
+    
+    # Startup
+    config = AgentConfig()
+    agent = EnvironmentalIntelligenceAgent(config)
+    await agent.startup()
+    
+    # Start monitoring in background
+    agent.monitoring_task = asyncio.create_task(agent.start_monitoring())
+    
+    yield
+    
+    # Shutdown
+    await agent.shutdown()
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="Environmental Intelligence Agent",
+    description="Agent 1: Real-time flood risk monitoring and prediction",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 
 # =====================================================================
-# PREDICTION MODELS
+# API ENDPOINTS
 # =====================================================================
 
-class FloodRiskFactors(BaseModel):
-    """Factors contributing to flood risk"""
-    rainfall_intensity: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    accumulated_rainfall: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    weather_severity: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    social_reports_density: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    historical_risk: float = Field(..., ge=0, le=1, description="Based on zone history")
-    drainage_factor: float = Field(..., ge=0, le=1, description="1=poor, 0=excellent")
-    elevation_factor: float = Field(..., ge=0, le=1, description="1=low, 0=high")
+@app.get("/", response_model=Dict[str, str])
+async def root():
+    """Root endpoint"""
+    return {
+        "agent": "Environmental Intelligence Agent",
+        "status": "operational",
+        "version": "1.0.0"
+    }
+
+
+@app.get("/health", response_model=HealthCheckResponse)
+async def health_check():
+    """Health check endpoint"""
+    global agent
     
-    @property
-    def weighted_score(self) -> float:
-        """Calculate weighted risk score"""
-        weights = {
-            'rainfall_intensity': 0.25,
-            'accumulated_rainfall': 0.20,
-            'weather_severity': 0.15,
-            'social_reports_density': 0.15,
-            'historical_risk': 0.10,
-            'drainage_factor': 0.10,
-            'elevation_factor': 0.05
-        }
-        
-        return (
-            self.rainfall_intensity * weights['rainfall_intensity'] +
-            self.accumulated_rainfall * weights['accumulated_rainfall'] +
-            self.weather_severity * weights['weather_severity'] +
-            self.social_reports_density * weights['social_reports_density'] +
-            self.historical_risk * weights['historical_risk'] +
-            self.drainage_factor * weights['drainage_factor'] +
-            self.elevation_factor * weights['elevation_factor']
-        )
-
-
-class FloodPrediction(BaseModel):
-    """Flood risk prediction for a zone"""
-    id: UUID = Field(default_factory=uuid4)
-    zone: SentinelZone
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    risk_score: float = Field(..., ge=0, le=1, description="Overall risk score (0-1)")
-    severity_level: SeverityLevel
-    confidence: float = Field(..., ge=0, le=1, description="Prediction confidence (0-1)")
-    risk_factors: FloodRiskFactors
-    time_to_impact_hours: Optional[float] = Field(None, gt=0, description="Estimated hours until flooding")
-    affected_area_km2: float = Field(..., ge=0)
-    estimated_affected_population: Optional[int] = None
-    recommended_actions: List[str] = Field(default_factory=list)
-    alert_level: AlertType
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
     
-    @validator('severity_level')
-    def severity_matches_risk(cls, v, values):
-        """Ensure severity level matches risk score"""
-        if 'risk_score' in values:
-            risk = values['risk_score']
-            expected_severity = cls._risk_to_severity(risk)
-            if v != expected_severity:
-                # Auto-correct severity based on risk score
-                return expected_severity
-        return v
-    
-    @staticmethod
-    def _risk_to_severity(risk_score: float) -> SeverityLevel:
-        """Convert risk score to severity level"""
-        if risk_score >= 0.8:
-            return SeverityLevel.CRITICAL
-        elif risk_score >= 0.6:
-            return SeverityLevel.HIGH
-        elif risk_score >= 0.4:
-            return SeverityLevel.MODERATE
-        elif risk_score >= 0.2:
-            return SeverityLevel.LOW
-        else:
-            return SeverityLevel.MINIMAL
-
-
-# =====================================================================
-# AGENT OUTPUT MODELS
-# =====================================================================
-
-class EnvironmentalAlert(BaseModel):
-    """Alert message for other agents"""
-    id: UUID = Field(default_factory=uuid4)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    alert_type: AlertType
-    severity: SeverityLevel
-    zone: SentinelZone
-    prediction: FloodPrediction
-    message: str
-    priority: int = Field(..., ge=1, le=5, description="1=lowest, 5=highest")
-    
-    @validator('priority')
-    def priority_matches_severity(cls, v, values):
-        """Auto-set priority based on severity"""
-        if 'severity' in values:
-            severity_map = {
-                SeverityLevel.MINIMAL: 1,
-                SeverityLevel.LOW: 2,
-                SeverityLevel.MODERATE: 3,
-                SeverityLevel.HIGH: 4,
-                SeverityLevel.CRITICAL: 5
-            }
-            return severity_map.get(values['severity'], 3)
-        return v
-
-
-class AgentOutput(BaseModel):
-    """Complete output from Environmental Intelligence Agent"""
-    agent_id: str = "agent_1_environmental"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    predictions: List[FloodPrediction]
-    alerts: List[EnvironmentalAlert]
-    monitored_zones: List[SentinelZone]
-    data_sources_status: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Status of each data source"
+    return HealthCheckResponse(
+        status="healthy",
+        agent_id=agent.config.agent_id,
+        version="1.0.0",
+        data_sources={
+            'weather': agent.weather_collector is not None,
+            'social_media': agent.social_collector is not None,
+            'spatial_db': agent.spatial_analyzer is not None
+        },
+        database_connected=agent.db_pool is not None,
+        cache_connected=agent.redis_client is not None
     )
-    processing_time_seconds: float
-    next_update_in_seconds: float
+
+
+@app.get("/status", response_model=MonitoringStatus)
+async def get_status():
+    """Get current monitoring status"""
+    global agent
     
-    @property
-    def critical_alerts(self) -> List[EnvironmentalAlert]:
-        """Get only critical alerts"""
-        return [a for a in self.alerts if a.severity == SeverityLevel.CRITICAL]
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
     
-    @property
-    def high_risk_zones(self) -> List[SentinelZone]:
-        """Get zones with high or critical risk"""
-        high_risk = set()
-        for pred in self.predictions:
-            if pred.severity_level in [SeverityLevel.HIGH, SeverityLevel.CRITICAL]:
-                high_risk.add(pred.zone.id)
-        return [z for z in self.monitored_zones if z.id in high_risk]
+    return agent.get_status()
+
+
+@app.get("/output", response_model=AgentOutput)
+async def get_latest_output():
+    """Get latest agent output"""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    if not agent.latest_output:
+        raise HTTPException(status_code=404, detail="No output available yet")
+    
+    return agent.latest_output
+
+
+@app.post("/trigger")
+async def trigger_monitoring_cycle(background_tasks: BackgroundTasks):
+    """Manually trigger a monitoring cycle"""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    background_tasks.add_task(agent.run_monitoring_cycle)
+    
+    return {"message": "Monitoring cycle triggered"}
+
+
+@app.get("/zones", response_model=List[SentinelZone])
+async def get_zones():
+    """Get all sentinel zones"""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    return agent.sentinel_zones
+
+
+@app.get("/zones/{zone_id}/prediction")
+async def get_zone_prediction(zone_id: str):
+    """Get latest prediction for a specific zone"""
+    global agent
+    
+    if not agent or not agent.latest_output:
+        raise HTTPException(status_code=404, detail="No predictions available")
+    
+    for pred in agent.latest_output.predictions:
+        if str(pred.zone.id) == zone_id:
+            return pred
+    
+    raise HTTPException(status_code=404, detail="Zone not found")
 
 
 # =====================================================================
-# DATABASE MODELS
+# MAIN ENTRY POINT
 # =====================================================================
 
-class WeatherRecord(BaseModel):
-    """Database record for weather data"""
-    id: UUID = Field(default_factory=uuid4)
-    zone_id: UUID
-    timestamp: datetime
-    location_wkt: str = Field(..., description="PostGIS POINT geometry")
-    temperature: float
-    humidity: float
-    pressure: float
-    wind_speed: float
-    precipitation_1h: Optional[float] = None
-    precipitation_3h: Optional[float] = None
-    condition: str
-    raw_data_json: Optional[Dict[str, Any]] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+def main():
+    """Main entry point for the agent"""
+    # Setup signal handlers
+    def signal_handler(sig, frame):
+        logger.info("Interrupt received, shutting down...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Run FastAPI server
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8001,
+        log_level="info",
+        access_log=True
+    )
 
 
-class SocialMediaRecord(BaseModel):
-    """Database record for social media posts"""
-    id: UUID = Field(default_factory=uuid4)
-    platform_id: str
-    zone_id: Optional[UUID] = None
-    timestamp: datetime
-    content: str
-    author: str
-    location_wkt: Optional[str] = None
-    relevance_score: Optional[float] = None
-    sentiment: Optional[str] = None
-    contains_flood_report: bool = False
-    enriched: bool = False
-    raw_data_json: Optional[Dict[str, Any]] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class PredictionRecord(BaseModel):
-    """Database record for predictions"""
-    id: UUID = Field(default_factory=uuid4)
-    zone_id: UUID
-    timestamp: datetime
-    risk_score: float
-    severity_level: str
-    confidence: float
-    time_to_impact_hours: Optional[float] = None
-    affected_area_km2: float
-    risk_factors_json: Dict[str, Any]
-    recommended_actions: List[str]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-# =====================================================================
-# API RESPONSE MODELS
-# =====================================================================
-
-class HealthCheckResponse(BaseModel):
-    """Health check response"""
-    status: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    agent_id: str = "agent_1_environmental"
-    version: str = "1.0.0"
-    data_sources: Dict[str, bool]
-    database_connected: bool
-    cache_connected: bool
-
-
-class MonitoringStatus(BaseModel):
-    """Current monitoring status"""
-    active_zones: int
-    total_predictions: int
-    critical_alerts: int
-    last_update: datetime
-    next_update: datetime
-    data_freshness_seconds: float
+if __name__ == "__main__":
+    main()
