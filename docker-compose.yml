@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: disaster_postgres
+    environment:
+      POSTGRES_DB: disaster_response
+      POSTGRES_USER: disaster_admin
+      POSTGRES_PASSWORD: disaster123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d:ro
+    networks:
+      - disaster_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U disaster_admin -d disaster_response"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: disaster_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - disaster_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  agent1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent1_environmental
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./config:/app/config:ro
+      - ./src:/app/src
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8001:8000"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  disaster_network:
+    driver: bridge
