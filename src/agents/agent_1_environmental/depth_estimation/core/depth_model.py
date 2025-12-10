@@ -6,22 +6,14 @@ U-Net style architecture optimized for CPU
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
-"""
-Depth Predictor - Main interface for depth estimation
-"""
-
-import numpy as np
 from typing import Dict, Any, Tuple, Optional
 
-try:
-    from core.depth_model import LightweightDepthCNN
-except ImportError:
-    from .depth_model import LightweightDepthCNN
+
 
 class LightweightDepthCNN:
     """Efficient CNN for depth estimation"""
     
-    def __init__(self, input_shape: Tuple[int, int, int] = (128, 128, 2)):
+    def __init__(self, input_shape: Tuple[int, int, int] = (32, 32, 2)):
         self.input_shape = input_shape
         self.model: Optional[keras.Model] = None
         

@@ -7,6 +7,7 @@ import numpy as np
 import json
 import time
 from datetime import datetime
+from typing import Dict, Any, Optional
 
 # Support both relative and absolute imports
 try:
@@ -16,10 +17,11 @@ except ImportError:
     from .dataset_generator import DepthDatasetGenerator
     from ..core.depth_model import LightweightDepthCNN
 
+
 class DepthTrainer:
     """Complete training pipeline"""
     
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize trainer
         
@@ -27,10 +29,10 @@ class DepthTrainer:
             config: dict with training parameters, or None for defaults
         """
         self.config = config or self._default_config()
-        self.model = None
-        self.history = None
+        self.model: Optional[LightweightDepthCNN] = None
+        self.history: Any = None
     
-    def _default_config(self):
+    def _default_config(self) -> Dict[str, Any]:
         """Default training configuration"""
         return {
             'aoi_coords': [91.8, 24.7, 92.2, 25.0],  # Sylhet
@@ -38,13 +40,13 @@ class DepthTrainer:
             'end_date': '2022-09-30',
             'n_train_samples': 80,
             'n_val_samples': 20,
-            'patch_size': 128,
+            'patch_size': 32,
             'epochs': 20,
             'batch_size': 8,
             'learning_rate': 0.001
         }
     
-    def train(self, save_path='models/flood_depth_model.h5'):
+    def train(self, save_path: str = 'models/flood_depth_model.h5') -> Any:
         """
         Complete training pipeline
         
@@ -87,7 +89,8 @@ class DepthTrainer:
         
         # Step 3: Build and train model
         print("\n[3/4] Training model...")
-        self.model = LightweightDepthCNN()
+        input_shape = (self.config['patch_size'], self.config['patch_size'], 2)
+        self.model = LightweightDepthCNN(input_shape=input_shape)
         self.model.compile(learning_rate=self.config['learning_rate'])
         
         print(f"\nModel parameters: {self.model.get_params():,}")
@@ -107,7 +110,7 @@ class DepthTrainer:
         print("\n[4/4] Saving model...")
         self.model.save(save_path)
         
-        # Save training info
+        # Save training info WITH FULL HISTORY FOR LOSS CURVES
         info = {
             'config': self.config,
             'training_time_minutes': training_time / 60,
@@ -115,6 +118,15 @@ class DepthTrainer:
                 'val_loss': float(self.history.history['val_loss'][-1]),
                 'val_mae': float(self.history.history['val_mae'][-1]),
                 'val_rmse': float(self.history.history['val_rmse'][-1])
+            },
+            # FULL HISTORY FOR LOSS CURVES
+            'history': {
+                'loss': [float(x) for x in self.history.history['loss']],
+                'val_loss': [float(x) for x in self.history.history['val_loss']],
+                'mae': [float(x) for x in self.history.history['mae']],
+                'val_mae': [float(x) for x in self.history.history['val_mae']],
+                'rmse': [float(x) for x in self.history.history['rmse']],
+                'val_rmse': [float(x) for x in self.history.history['val_rmse']]
             },
             'trained_at': datetime.now().isoformat()
         }
@@ -139,7 +151,7 @@ class DepthTrainer:
         return self.history
 
 
-def quick_train(region='sylhet', save_path='../../../models/flood_depth_model.h5'):
+def quick_train(region: str = 'sylhet', save_path: str = '../../../models/flood_depth_model.h5') -> Any:
     """
     Quick training function with preset regions
     
@@ -159,7 +171,7 @@ def quick_train(region='sylhet', save_path='../../../models/flood_depth_model.h5
         'end_date': '2022-09-30',
         'n_train_samples': 80,
         'n_val_samples': 20,
-        'patch_size': 128,
+        'patch_size': 32,
         'epochs': 20,
         'batch_size': 8,
         'learning_rate': 0.001

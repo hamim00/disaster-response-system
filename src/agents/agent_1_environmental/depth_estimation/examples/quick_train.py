@@ -106,7 +106,7 @@ training_config: Dict[str, Any] = {
     'end_date': '2022-09-30',
     'n_train_samples': 80,
     'n_val_samples': 20,
-    'patch_size': 128,
+    'patch_size': 32,
     'epochs': 20,
     'batch_size': 8,
     'learning_rate': 0.001

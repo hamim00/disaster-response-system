@@ -232,3 +232,5 @@ Thumbs.db
 
 # Earth Engine
 .config/earthengine/
+.json
+.h5
