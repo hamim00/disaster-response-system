@@ -56,6 +56,30 @@ services:
       - disaster_network
     restart: unless-stopped
 
+  agent2:
+    build:
+      context: .
+      dockerfile: src/agents/agent_2_distress_intelligence/Dockerfile
+    container_name: agent2_distress_intelligence
+    depends_on:
+      redis:
+        condition: service_healthy
+      agent1:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      - AGENT1_URL=http://agent1:8000
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    ports:
+      - "8002:8002"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 

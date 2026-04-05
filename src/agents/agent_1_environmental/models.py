@@ -284,37 +284,123 @@ class SpatialAnalysisResult(BaseModel):
 # =====================================================================
 
 class FloodRiskFactors(BaseModel):
-    """Factors contributing to flood risk"""
+    """
+    Factors contributing to flood risk.
+    
+    8-factor model with dynamic weighting:
+      - Weather factors: rainfall intensity, accumulated rainfall, weather severity
+      - Ground truth factors: satellite flood detection (highest weight), flood depth
+      - Zone factors: drainage capacity, elevation
+      - Optional factors: social media reports, historical risk
+    
+    When satellite confirms active flooding, it overrides weather-based predictions.
+    Social media is optional — if unavailable, its weight redistributes automatically.
+    """
+    # --- Weather factors (forecast: "will it get worse?") ---
     rainfall_intensity: float = Field(..., ge=0, le=1, description="Normalized 0-1")
     accumulated_rainfall: float = Field(..., ge=0, le=1, description="Normalized 0-1")
     weather_severity: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    social_reports_density: float = Field(..., ge=0, le=1, description="Normalized 0-1")
-    historical_risk: float = Field(..., ge=0, le=1, description="Based on zone history")
+    
+    # --- Satellite ground truth (observation: "what's happening now?") ---
+    satellite_flood_detection: float = Field(
+        0.0, ge=0, le=1,
+        description="Satellite SAR flood detection score. 0=no flood, 1=severe flooding"
+    )
+    flood_depth_estimate: float = Field(
+        0.0, ge=0, le=1,
+        description="Normalized flood depth. 0=dry, 1=2m+ life-threatening"
+    )
+    
+    # --- Zone characteristics ---
     drainage_factor: float = Field(..., ge=0, le=1, description="1=poor, 0=excellent")
     elevation_factor: float = Field(..., ge=0, le=1, description="1=low, 0=high")
     
+    # --- Optional data sources ---
+    social_reports_density: float = Field(
+        0.0, ge=0, le=1,
+        description="Social media flood report density. 0 if unavailable."
+    )
+    historical_risk: float = Field(0.0, ge=0, le=1, description="Based on zone history")
+    
+    # --- Metadata flags for dynamic weight redistribution ---
+    has_satellite_data: bool = Field(False, description="Whether satellite data was available")
+    has_social_data: bool = Field(False, description="Whether social media data was available")
+    satellite_confirmed_flooding: bool = Field(
+        False,
+        description="True when satellite SAR detects active flooding in the zone"
+    )
+    
     @property
     def weighted_score(self) -> float:
-        """Calculate weighted risk score"""
-        weights = {
-            'rainfall_intensity': 0.25,
-            'accumulated_rainfall': 0.20,
-            'weather_severity': 0.15,
-            'social_reports_density': 0.15,
-            'historical_risk': 0.10,
-            'drainage_factor': 0.10,
-            'elevation_factor': 0.05
-        }
+        """
+        Calculate weighted risk score with dynamic weight redistribution.
         
-        return (
+        Weight philosophy:
+          - When satellite IS available: satellite dominates (ground truth > forecast)
+          - When satellite is NOT available: weather dominates (old behavior)
+          - Social media: included if available, redistributed if not
+          - Override: if satellite confirms active flooding, floor score at 0.65 (HIGH)
+        """
+        if self.has_satellite_data:
+            # --- SATELLITE-AVAILABLE MODE ---
+            # Satellite is ground truth — highest weight
+            weights = {
+                'satellite_flood_detection': 0.25,  # Strongest signal
+                'flood_depth_estimate': 0.12,
+                'rainfall_intensity': 0.15,          # "Will it worsen?"
+                'accumulated_rainfall': 0.10,
+                'weather_severity': 0.08,
+                'drainage_factor': 0.10,
+                'elevation_factor': 0.05,
+                'social_reports_density': 0.05,
+                'historical_risk': 0.10,
+            }
+        else:
+            # --- WEATHER-ONLY FALLBACK MODE ---
+            # No satellite — weather dominates (backward-compatible behavior)
+            weights = {
+                'satellite_flood_detection': 0.0,
+                'flood_depth_estimate': 0.0,
+                'rainfall_intensity': 0.25,
+                'accumulated_rainfall': 0.20,
+                'weather_severity': 0.15,
+                'drainage_factor': 0.10,
+                'elevation_factor': 0.05,
+                'social_reports_density': 0.10,
+                'historical_risk': 0.15,
+            }
+        
+        # Zero out social weight if data not available
+        if not self.has_social_data:
+            weights['social_reports_density'] = 0.0
+        
+        # Normalize weights to sum to 1.0 (redistributes removed weights)
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            weights = {k: v / total_weight for k, v in weights.items()}
+        else:
+            return 0.0
+        
+        # Weighted sum of all factors
+        score = (
             self.rainfall_intensity * weights['rainfall_intensity'] +
             self.accumulated_rainfall * weights['accumulated_rainfall'] +
             self.weather_severity * weights['weather_severity'] +
-            self.social_reports_density * weights['social_reports_density'] +
-            self.historical_risk * weights['historical_risk'] +
+            self.satellite_flood_detection * weights['satellite_flood_detection'] +
+            self.flood_depth_estimate * weights['flood_depth_estimate'] +
             self.drainage_factor * weights['drainage_factor'] +
-            self.elevation_factor * weights['elevation_factor']
+            self.elevation_factor * weights['elevation_factor'] +
+            self.social_reports_density * weights['social_reports_density'] +
+            self.historical_risk * weights['historical_risk']
         )
+        
+        # SATELLITE OVERRIDE: If satellite confirms active flooding,
+        # the score CANNOT be below HIGH threshold regardless of other factors.
+        # Rationale: satellite is observing reality, not predicting it.
+        if self.satellite_confirmed_flooding:
+            score = max(score, 0.65)
+        
+        return min(score, 1.0)
 
 
 class FloodPrediction(BaseModel):

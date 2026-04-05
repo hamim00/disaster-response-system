@@ -21,6 +21,7 @@ from models import (
     WeatherData, WeatherMetrics, PrecipitationData, WeatherCondition,
     SocialMediaPost, GeoPoint, SentinelZone, DataSource, BoundingBox
 )
+from services.satellite_service import SatelliteDataCollector, SatelliteData
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -632,7 +633,8 @@ class DataCollectionOrchestrator:
     def __init__(
         self,
         weather_collector: WeatherAPICollector,
-        social_collector: SocialMediaCollector
+        social_collector: SocialMediaCollector,
+        satellite_collector: Optional[SatelliteDataCollector] = None
     ):
         """
         Initialize orchestrator.
@@ -640,9 +642,11 @@ class DataCollectionOrchestrator:
         Args:
             weather_collector: Weather API collector instance
             social_collector: Social media collector instance
+            satellite_collector: Satellite imagery collector instance (optional)
         """
         self.weather_collector = weather_collector
         self.social_collector = social_collector
+        self.satellite_collector = satellite_collector
         
         # Adaptive polling intervals (seconds)
         self.polling_intervals = {
@@ -681,29 +685,58 @@ class DataCollectionOrchestrator:
             zone: Sentinel zone to collect data for
             
         Returns:
-            Dictionary with weather and social media data
+            Dictionary with weather, social media, AND satellite data
         """
         logger.info(f"Collecting data for zone: {zone.name}")
         
-        # Collect concurrently
+        # Build task list — weather + social always, satellite if available
         weather_task = self.weather_collector.fetch_current_weather(zone.center)
         forecast_task = self.weather_collector.fetch_forecast(zone.center, hours=24)
         social_task = self.social_collector.fetch_recent_posts(zone, max_results=100)
         
-        weather, forecast, social_posts = await asyncio.gather(
-            weather_task,
-            forecast_task,
-            social_task,
-            return_exceptions=True
-        )
+        if self.satellite_collector:
+            satellite_task = self.satellite_collector.fetch_satellite_data(zone, str(zone.id))
+            
+            weather, forecast, social_posts, satellite = await asyncio.gather(
+                weather_task,
+                forecast_task,
+                social_task,
+                satellite_task,
+                return_exceptions=True
+            )
+        else:
+            weather, forecast, social_posts = await asyncio.gather(
+                weather_task,
+                forecast_task,
+                social_task,
+                return_exceptions=True
+            )
+            satellite = None
         
-        return {
+        # Build merged result
+        result = {
             'zone': zone,
             'weather': weather if not isinstance(weather, Exception) else None,
             'forecast': forecast if not isinstance(forecast, Exception) else [],
             'social_posts': social_posts if not isinstance(social_posts, Exception) else [],
+            'satellite': satellite if (satellite is not None and not isinstance(satellite, Exception)) else None,
             'collected_at': datetime.utcnow()
         }
+        
+        # Log satellite status for this zone
+        sat_data = result.get('satellite')
+        if sat_data and hasattr(sat_data, 'sar_available') and sat_data.sar_available:
+            fd = sat_data.flood_detection
+            logger.info(
+                f"  [{zone.name}] Satellite: {fd.risk_level} risk, "
+                f"{fd.flood_percentage:.1f}% flood ({fd.flood_area_km2:.2f} km²)"
+            )
+        elif sat_data:
+            logger.info(f"  [{zone.name}] Satellite: data unavailable ({getattr(sat_data.flood_detection, 'error', 'unknown')})")
+        else:
+            logger.info(f"  [{zone.name}] Satellite: collector not configured")
+        
+        return result
     
     async def collect_all_zones(
         self,

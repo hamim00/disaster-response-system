@@ -33,6 +33,7 @@ from data_collectors import (
     SocialMediaCollector,
     DataCollectionOrchestrator
 )
+from services.satellite_service import SatelliteDataCollector
 from data_processors import (
     LLMEnrichmentProcessor,
     WeatherDataNormalizer,
@@ -153,6 +154,7 @@ class EnvironmentalIntelligenceAgent:
         self.weather_collector: Optional[WeatherAPICollector] = None
         self.social_collector: Optional[SocialMediaCollector] = None
         self.collection_orchestrator: Optional[DataCollectionOrchestrator] = None
+        self.satellite_collector: Optional[SatelliteDataCollector] = None
         self.llm_processor: Optional[LLMEnrichmentProcessor] = None
         self.weather_normalizer: Optional[WeatherDataNormalizer] = None
         self.social_analyzer: Optional[SocialMediaAnalyzer] = None
@@ -202,9 +204,20 @@ class EnvironmentalIntelligenceAgent:
                 cache_client=self.redis_client
             )
             
+            # Initialize satellite collector (GEE + CNN flood detection)
+            try:
+                self.satellite_collector = SatelliteDataCollector(
+                    cache_client=self.redis_client
+                )
+                logger.info("Satellite collector initialized")
+            except Exception as e:
+                logger.warning(f"Satellite collector unavailable: {e} — continuing without satellite data")
+                self.satellite_collector = None
+            
             self.collection_orchestrator = DataCollectionOrchestrator(
                 weather_collector=self.weather_collector,
-                social_collector=self.social_collector
+                social_collector=self.social_collector,
+                satellite_collector=self.satellite_collector
             )
             logger.info("Data collectors initialized")
             
@@ -407,6 +420,7 @@ class EnvironmentalIntelligenceAgent:
             logger.info("Step 3: Performing spatial analysis...")
             assert self.spatial_analyzer is not None, "Spatial analyzer not initialized"
             spatial_results = {}
+            satellite_summary = {}
             for data in processed_data:
                 zone = data['zone']
                 
@@ -423,6 +437,22 @@ class EnvironmentalIntelligenceAgent:
                         str(zone.id)
                     )
                 
+                # Carry satellite data forward for prediction
+                # (it was collected in Step 1 alongside weather+social)
+                sat = data.get('satellite')
+                if sat and hasattr(sat, 'flood_detection') and sat.flood_detection:
+                    fd = sat.flood_detection
+                    satellite_summary[str(zone.id)] = {
+                        'risk_level': fd.risk_level,
+                        'flood_pct': fd.flood_percentage,
+                        'flood_area_km2': fd.flood_area_km2,
+                        'confidence': fd.confidence,
+                        'status': fd.status,
+                    }
+                    data['satellite_risk'] = fd.risk_level
+                    data['satellite_flood_pct'] = fd.flood_percentage
+                    data['satellite_flood_area_km2'] = fd.flood_area_km2
+                
                 # Perform spatial analysis
                 spatial_result = await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).analyze_zone_spatial_patterns(
                     zone
@@ -431,6 +461,9 @@ class EnvironmentalIntelligenceAgent:
                 
                 # Add spatial result to processed data
                 data['spatial_analysis'] = spatial_result
+            
+            if satellite_summary:
+                logger.info(f"   Satellite data merged for {len(satellite_summary)} zones")
             
             # Step 4: Get historical risk scores
             logger.info("Step 4: Retrieving historical risk scores...")
@@ -494,7 +527,8 @@ class EnvironmentalIntelligenceAgent:
                 data_sources_status={
                     'weather_api': 'operational',
                     'social_media': 'operational',
-                    'spatial_db': 'operational'
+                    'spatial_db': 'operational',
+                    'satellite_gee': 'operational' if satellite_summary else 'unavailable'
                 },
                 processing_time_seconds=processing_time,
                 next_update_in_seconds=next_update

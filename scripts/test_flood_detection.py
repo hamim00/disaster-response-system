@@ -125,7 +125,7 @@ def preprocess_image(sar_image, target_size=64):
     resized = zoom(sar_image, (target_size/h, target_size/w, 1), order=1)
     
     normalized = (resized + 35) / 35
-    normalized = np.clip(normalized, 0, 1)
+    normalized = np.clip(np.array(normalized), 0, 1)
     
     return normalized.astype(np.float32)
 

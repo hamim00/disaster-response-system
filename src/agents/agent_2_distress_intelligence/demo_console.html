@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 2 — Distress Intelligence Console</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2d3140;
+    --text: #e0e0e6;
+    --text-dim: #8b8fa3;
+    --accent: #3b82f6;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --green: #22c55e;
+    --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .badge-live { background: #22c55e22; color: var(--green); border: 1px solid #22c55e44; }
+  .badge-sim { background: #f59e0b22; color: var(--orange); border: 1px solid #f59e0b44; }
+  
+  .api-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .api-status .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+  }
+  .api-status .dot.connected { background: var(--green); }
+  #apiUrlInput {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    width: 200px;
+    font-family: monospace;
+  }
+  
+  /* Tabs */
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  .tab {
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab .icon { margin-right: 6px; }
+  
+  /* Layout */
+  .main { display: flex; height: calc(100vh - 96px); }
+  .panel { flex: 1; padding: 20px; overflow-y: auto; }
+  .panel-right {
+    width: 420px;
+    min-width: 420px;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  
+  /* Form styles */
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-group select, .form-group input, .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group select:focus, .form-group input:focus, .form-group textarea:focus {
+    border-color: var(--accent);
+  }
+  .form-group textarea { min-height: 80px; resize: vertical; }
+  .form-row { display: flex; gap: 12px; }
+  .form-row .form-group { flex: 1; }
+  
+  .btn {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-danger { background: var(--red); color: white; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--text-dim); color: var(--text); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  /* Section headers */
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    line-height: 1.5;
+    background: var(--surface2);
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+  }
+  
+  /* SMS phone mockup */
+  .phone-frame {
+    max-width: 380px;
+    margin: 0 auto;
+    background: var(--surface2);
+    border-radius: 16px;
+    border: 2px solid var(--border);
+    padding: 20px;
+  }
+  .phone-header {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sms-preview {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--cyan);
+    min-height: 40px;
+    word-break: break-all;
+  }
+  .format-buttons { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .format-btn {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    transition: all 0.2s;
+  }
+  .format-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .format-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  
+  /* Queue items */
+  .queue-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .queue-header h3 { font-size: 14px; }
+  .queue-count {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+  }
+  .queue-item {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  .queue-item:hover { background: var(--surface2); }
+  .queue-item .qi-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .qi-urgency {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .qi-critical { background: #ef444422; color: var(--red); }
+  .qi-high { background: #f59e0b22; color: var(--orange); }
+  .qi-medium { background: #3b82f622; color: var(--accent); }
+  .qi-low { background: #22c55e22; color: var(--green); }
+  .qi-channel { font-size: 11px; color: var(--text-dim); }
+  .qi-zone { font-size: 14px; font-weight: 600; }
+  .qi-details { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  .qi-score {
+    margin-left: auto;
+    font-size: 20px;
+    font-weight: 700;
+    font-family: monospace;
+  }
+  .qi-verified {
+    font-size: 11px;
+    color: var(--green);
+  }
+  .qi-unverified { font-size: 11px; color: var(--orange); }
+  
+  .queue-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  
+  /* Log */
+  .log-area {
+    margin-top: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    color: var(--text-dim);
+  }
+  .log-entry { margin-bottom: 4px; }
+  .log-ok { color: var(--green); }
+  .log-err { color: var(--red); }
+  .log-info { color: var(--cyan); }
+  
+  /* Social media explanation */
+  .info-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .info-card h4 { font-size: 13px; margin-bottom: 8px; color: var(--accent); }
+  .info-card p { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .info-card code {
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--cyan);
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>🚨 Agent 2 — Distress Intelligence Console</h1>
+  <span class="badge badge-sim">DEMO MODE</span>
+  <div class="api-status">
+    <span>API:</span>
+    <input type="text" id="apiUrlInput" value="http://localhost:8002" onchange="checkApi()">
+    <div class="dot" id="apiDot"></div>
+    <span id="apiLabel">Disconnected</span>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('hotline')">
+    <span class="icon">📞</span> 999 Operator Console
+  </div>
+  <div class="tab" onclick="switchTab('sms')">
+    <span class="icon">💬</span> SMS / USSD Sender
+  </div>
+  <div class="tab" onclick="switchTab('social')">
+    <span class="icon">📱</span> Social Media Feed
+  </div>
+  <div class="tab" onclick="switchTab('satellite')">
+    <span class="icon">🛰️</span> Satellite Alerts
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Left panel: forms -->
+  <div class="panel">
+    
+    <!-- ============ 999 HOTLINE TAB ============ -->
+    <div id="tab-hotline" class="tab-content active">
+      <div class="section-title">📞 999 Emergency Call — Operator Form</div>
+      <div class="section-desc">
+        <strong>How this works in production:</strong> A 999 operator receives a voice call. 
+        The caller says where they are and what's happening. The operator types the details 
+        into this form and submits. The form POSTs structured JSON to Agent 2's 
+        <code>POST /ingest/hotline</code> endpoint — the same endpoint a real 999 system 
+        integration would use.<br><br>
+        <strong>For the demo:</strong> You play the role of the 999 operator. 
+        The caller's location comes from what they SAY on the phone — the operator transcribes it.
+        No voice-to-text ML needed.
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Call ID (auto-generated)</label>
+          <input type="text" id="h_callId" readonly>
+        </div>
+        <div class="form-group">
+          <label>Timestamp</label>
+          <input type="datetime-local" id="h_timestamp">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Zone (caller reported)</label>
+          <select id="h_zone">
+            <option value="">— Select zone —</option>
+            <option value="mirpur">Mirpur (মিরপুর)</option>
+            <option value="uttara">Uttara (উত্তরা)</option>
+            <option value="mohammadpur">Mohammadpur (মোহাম্মদপুর)</option>
+            <option value="dhanmondi">Dhanmondi (ধানমন্ডি)</option>
+            <option value="badda">Badda (বাড্ডা)</option>
+            <option value="jatrabari">Jatrabari (যাত্রাবাড়ী)</option>
+            <option value="demra">Demra (ডেমরা)</option>
+            <option value="sylhet">Sylhet (সিলেট)</option>
+            <option value="sunamganj">Sunamganj (সুনামগঞ্জ)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Urgency</label>
+          <select id="h_urgency">
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical" selected>Critical</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Situation Type</label>
+          <select id="h_situation">
+            <option value="stranded">Stranded / Trapped</option>
+            <option value="medical">Medical Emergency</option>
+            <option value="collapse">Building Collapse</option>
+            <option value="evacuate">Evacuation Needed</option>
+            <option value="rising">Water Rising</option>
+            <option value="supplies">Need Supplies</option>
+            <option value="missing">Missing Person</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>People Count</label>
+          <input type="number" id="h_people" min="1" value="5">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Water Level (feet)</label>
+          <input type="number" id="h_waterFt" min="0" step="0.5" value="4">
+        </div>
+        <div class="form-group">
+          <label>Caller Phone (hashed)</label>
+          <input type="text" id="h_phone" value="" placeholder="Auto-generated">
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Operator Notes (what the caller said)</label>
+        <textarea id="h_notes" placeholder="e.g., Caller reports 5 people trapped on rooftop of building near Mirpur Section 12 mosque. Water at 4 feet and rising. One elderly person needs medication."></textarea>
+      </div>
+      
+      <div style="display:flex; gap:12px;">
+        <button class="btn btn-danger" onclick="submitHotline()">🚨 Submit Emergency Call</button>
+        <button class="btn btn-outline" onclick="resetHotline()">Clear Form</button>
+      </div>
+      
+      <div class="log-area" id="hotlineLog"></div>
+    </div>
+
+    <!-- ============ SMS TAB ============ -->
+    <div id="tab-sms" class="tab-content">
+      <div class="section-title">💬 SMS / USSD Message Sender</div>
+      <div class="section-desc">
+        <strong>How this works in production:</strong> People send SMS to a shortcode (e.g., 16789). 
+        The Telco's SMS gateway receives the message and HTTP POSTs it to Agent 2's 
+        <code>POST /ingest/sms</code> endpoint. The NLP parser then extracts location, water level, 
+        and urgency from the text — whether it's structured format, USSD response, 
+        or free-text Banglish.<br><br>
+        <strong>For the demo:</strong> This form simulates sending an SMS. The parsing logic 
+        that runs on the message is identical to what runs in production. 
+        SMS works on 2G — this is the critical channel when internet dies.
+      </div>
+      
+      <div class="phone-frame">
+        <div class="phone-header">
+          📱 SMS to Emergency Shortcode 16789 &nbsp;|&nbsp; Network: 2G
+        </div>
+        
+        <div class="form-group">
+          <label>Message Format (pick one)</label>
+          <div class="format-buttons">
+            <div class="format-btn active" onclick="setSmsFormat('structured', this)">Structured</div>
+            <div class="format-btn" onclick="setSmsFormat('ussd', this)">USSD *999#</div>
+            <div class="format-btn" onclick="setSmsFormat('freetext_en', this)">Free Text (EN)</div>
+            <div class="format-btn" onclick="setSmsFormat('freetext_bn', this)">Free Text (BN)</div>
+            <div class="format-btn" onclick="setSmsFormat('banglish', this)">Banglish</div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Message Body</label>
+          <textarea id="sms_body" rows="3" style="font-family:monospace;">FLOOD MIRPUR 4FT 6 ROOFTOP</textarea>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Operator</label>
+            <select id="sms_operator">
+              <option value="GP">Grameenphone</option>
+              <option value="Robi">Robi</option>
+              <option value="Banglalink">Banglalink</option>
+              <option value="Teletalk">Teletalk</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Signal</label>
+            <select id="sms_signal">
+              <option value="2G" selected>2G</option>
+              <option value="3G">3G</option>
+              <option value="4G">4G</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="sms-preview" id="smsPreview">FLOOD MIRPUR 4FT 6 ROOFTOP</div>
+        
+        <div style="margin-top:16px; display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="submitSms()" style="flex:1;">📤 Send SMS</button>
+        </div>
+      </div>
+      
+      <div class="log-area" id="smsLog"></div>
+    </div>
+
+    <!-- ============ SOCIAL MEDIA TAB ============ -->
+    <div id="tab-social" class="tab-content">
+      <div class="section-title">📱 Social Media Feed</div>
+      <div class="section-desc">
+        <strong>How this works in production:</strong> Agent 2 connects to Twitter API v2 
+        and Facebook Graph API, searches for flood-related posts in Dhaka using 
+        trilingual keywords (Bengali + English + Banglish). The NLP pipeline extracts 
+        zone, water level, urgency, and rescue need from each post.<br><br>
+        <strong>Current status:</strong> Twitter API key not yet available. 
+        Using sample data from the existing <code>sample_dataset_generator.py</code> 
+        in Agent 1. The NLP parsing runs identically on both real and sample data.<br><br>
+        <strong>To get Twitter API:</strong> Apply at 
+        <a href="https://developer.twitter.com" style="color:var(--accent)">developer.twitter.com</a>. 
+        Free tier gives 500K tweets/month read access. 
+        Once approved, set <code>TWITTER_BEARER_TOKEN</code> in your <code>.env</code>.
+      </div>
+      
+      <div class="form-group">
+        <label>Paste Social Media Posts (JSON array or one post per line)</label>
+        <textarea id="social_posts" rows="8" placeholder='[{"id":"fb_001","platform":"facebook","text":"মিরপুর ১২ নম্বর সেক্টরে পানি উঠে গেছে!","author":"user123","created_at":"2024-09-15T14:30:00","engagement":50}]'></textarea>
+      </div>
+      
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="submitSocial()">📤 Submit Posts</button>
+        <button class="btn btn-outline" onclick="loadSamplePosts()">Load Sample Data (15 posts)</button>
+      </div>
+      
+      <div class="log-area" id="socialLog"></div>
+    </div>
+
+    <!-- ============ SATELLITE TAB ============ -->
+    <div id="tab-satellite" class="tab-content">
+      <div class="section-title">🛰️ Satellite Flood Alerts (from Agent 1)</div>
+      <div class="section-desc">
+        <strong>How this works:</strong> Agent 1 detects flooding via Sentinel-1 SAR imagery 
+        and publishes <code>flood_alert</code> messages to Redis. Agent 2 subscribes to this 
+        channel and feeds alerts into the Satellite+Population overlay engine, which combines 
+        flood extent with BBS census data to estimate population at risk.<br><br>
+        <strong>This channel needs zero communication from victims.</strong> 
+        Even if all phone networks are down, satellite data + census overlay gives Agent 3 
+        enough to pre-position rescue boats.
+      </div>
+      
+      <div class="form-group">
+        <label>Flood Alerts from Agent 1 (JSON array)</label>
+        <textarea id="sat_alerts" rows="8" placeholder='[{"zone_id":"mirpur","flood_pct":37.5,"flood_depth_m":1.5,"risk_score":0.78,"severity":"high","timestamp":"2024-09-15T14:00:00"}]'></textarea>
+      </div>
+      
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="submitSatellite()">📤 Submit Flood Alerts</button>
+        <button class="btn btn-outline" onclick="loadSampleAlerts()">Load 2024 Monsoon Data</button>
+      </div>
+      
+      <div class="log-area" id="satLog"></div>
+    </div>
+
+  </div>
+
+  <!-- Right panel: live queue -->
+  <div class="panel-right">
+    <div class="queue-header">
+      <h3>📋 Distress Queue (for Agent 3)</h3>
+      <span class="queue-count" id="queueCount">0</span>
+    </div>
+    <div style="padding:8px 20px; border-bottom:1px solid var(--border); display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="triggerCycle()" style="font-size:12px; padding:6px 12px;">
+        ▶ Trigger Processing
+      </button>
+      <button class="btn btn-outline" onclick="refreshQueue()" style="font-size:12px; padding:6px 12px;">
+        🔄 Refresh Queue
+      </button>
+    </div>
+    <div id="queueList">
+      <div class="queue-empty">
+        No distress items yet.<br>
+        Submit data from any channel, then click "Trigger Processing".
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── API ──
+function getApiUrl() {
+  return document.getElementById('apiUrlInput').value.replace(/\/+$/, '');
+}
+
+async function apiPost(path, data) {
+  const resp = await fetch(getApiUrl() + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return resp.json();
+}
+
+async function apiGet(path) {
+  const resp = await fetch(getApiUrl() + path);
+  return resp.json();
+}
+
+// ── API health check ──
+async function checkApi() {
+  const dot = document.getElementById('apiDot');
+  const label = document.getElementById('apiLabel');
+  try {
+    const data = await apiGet('/');
+    dot.classList.add('connected');
+    label.textContent = 'Connected';
+    label.style.color = 'var(--green)';
+  } catch(e) {
+    dot.classList.remove('connected');
+    label.textContent = 'Disconnected';
+    label.style.color = 'var(--red)';
+  }
+}
+
+// ── Tab switching ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.closest('.tab').classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Logging ──
+function log(elementId, msg, type='info') {
+  const el = document.getElementById(elementId);
+  const cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : 'log-info';
+  const time = new Date().toLocaleTimeString();
+  el.innerHTML = `<div class="log-entry ${cls}">[${time}] ${msg}</div>` + el.innerHTML;
+}
+
+// ── 999 HOTLINE ──
+let callCounter = 1;
+function generateCallId() {
+  const id = `999-${new Date().getFullYear()}-${String(callCounter++).padStart(6, '0')}`;
+  document.getElementById('h_callId').value = id;
+}
+function resetHotline() {
+  generateCallId();
+  document.getElementById('h_timestamp').value = new Date().toISOString().slice(0, 16);
+  document.getElementById('h_zone').value = '';
+  document.getElementById('h_notes').value = '';
+  document.getElementById('h_people').value = 5;
+  document.getElementById('h_waterFt').value = 4;
+  document.getElementById('h_phone').value = 'hash_' + Math.random().toString(36).slice(2, 8);
+}
+
+async function submitHotline() {
+  const call = {
+    call_id: document.getElementById('h_callId').value,
+    timestamp: new Date(document.getElementById('h_timestamp').value).toISOString(),
+    zone: document.getElementById('h_zone').value,
+    urgency: document.getElementById('h_urgency').value,
+    situation: document.getElementById('h_situation').value,
+    people_count: parseInt(document.getElementById('h_people').value) || 0,
+    water_level_ft: parseFloat(document.getElementById('h_waterFt').value) || 0,
+    operator_notes: document.getElementById('h_notes').value,
+    caller_phone_hash: document.getElementById('h_phone').value,
+    call_duration_seconds: Math.floor(Math.random() * 180) + 60,
+  };
+  
+  if (!call.zone) {
+    log('hotlineLog', 'ERROR: Select a zone (caller must report location)', 'err');
+    return;
+  }
+  
+  try {
+    const result = await apiPost('/ingest/hotline', [call]);
+    log('hotlineLog', `✅ Call ${call.call_id} submitted → ${call.zone} (${call.urgency})`, 'ok');
+    log('hotlineLog', `   ${result.message}`, 'info');
+    resetHotline();
+  } catch(e) {
+    log('hotlineLog', `❌ API error: ${e.message}. Is Agent 2 running on ${getApiUrl()}?`, 'err');
+  }
+}
+
+// ── SMS ──
+const SMS_TEMPLATES = {
+  structured: 'FLOOD MIRPUR 4FT 6 ROOFTOP',
+  ussd: 'USSD|MIRPUR|SEVERE|TRAPPED|5_PEOPLE',
+  freetext_en: 'Flooding in Uttara sector 10. Water 3 feet. 4 people stuck on roof. Need rescue boat.',
+  freetext_bn: 'মিরপুর ১২ নম্বরে পানি ৪ ফুট! ৬ জন আটকে আছি ছাদে! বাঁচাও!',
+  banglish: 'Demra te pani 5ft. 3 poribar atke ase 2nd floor e. Help dorkar urgently.',
+};
+
+function setSmsFormat(format, el) {
+  document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('sms_body').value = SMS_TEMPLATES[format];
+  updateSmsPreview();
+}
+
+function updateSmsPreview() {
+  document.getElementById('smsPreview').textContent = document.getElementById('sms_body').value;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('sms_body').addEventListener('input', updateSmsPreview);
+});
+
+async function submitSms() {
+  const msg = {
+    text: document.getElementById('sms_body').value,
+    phone_hash: 'hash_' + Math.random().toString(36).slice(2, 8),
+    operator: document.getElementById('sms_operator').value,
+    signal: document.getElementById('sms_signal').value,
+    timestamp: new Date().toISOString(),
+  };
+  
+  try {
+    const result = await apiPost('/ingest/sms', [msg]);
+    log('smsLog', `✅ SMS sent via ${msg.operator} (${msg.signal}): "${msg.text.slice(0,50)}..."`, 'ok');
+    log('smsLog', `   ${result.message}`, 'info');
+  } catch(e) {
+    log('smsLog', `❌ API error: ${e.message}`, 'err');
+  }
+}
+
+// ── Social Media ──
+const SAMPLE_SOCIAL_POSTS = [
+  {"id":"fb_001","platform":"facebook","text":"মিরপুর ১২ নম্বর সেক্টরে পানি উঠে গেছে! রাস্তায় হাঁটু পানি, গাড়ি চলতে পারছে না","author":"Ahmed_Mirpur","created_at":"2024-09-15T14:30:00","engagement":156,"has_media":true},
+  {"id":"fb_002","platform":"facebook","text":"URGENT! 5 families stranded on rooftop in Pallabi, Mirpur! Water is chest deep and rising! Please send help! বাঁচাও!","author":"FloodWatch_BD","created_at":"2024-09-15T15:00:00","engagement":843,"has_media":true},
+  {"id":"tw_003","platform":"twitter","text":"Uttara sector 10 e pani dhuktese basement e. Help please. 3 families stuck. Water 2ft already.","author":"uttara_resident","created_at":"2024-09-15T14:45:00","engagement":42},
+  {"id":"fb_004","platform":"facebook","text":"Dhanmondi lake overflowing slightly, road 27 has some water. Not too bad though.","author":"DhanmondiLife","created_at":"2024-09-15T14:20:00","engagement":23},
+  {"id":"fb_005","platform":"facebook","text":"জাত্রাবাড়ী এলাকায় ভয়াবহ বন্যা! পানি ৬ ফুট! একটা বাড়ি ভেঙে পড়েছে! মানুষ আটকে আছে! উদ্ধার দরকার!","author":"jatrabari_crisis","created_at":"2024-09-15T15:30:00","engagement":2105,"has_media":true},
+  {"id":"fb_006","platform":"facebook","text":"Beautiful rainy day in Gulshan! Love the monsoon weather from my apartment balcony","author":"lifestyle_dhaka","created_at":"2024-09-15T14:00:00","engagement":89,"has_media":true},
+  {"id":"fb_007","platform":"facebook","text":"Demra industrial area te heavy flooding. Factory basement e pani dhuktese. 30 workers trapped upstairs.","author":"demra_news","created_at":"2024-09-15T15:45:00","engagement":312},
+  {"id":"tw_008","platform":"twitter","text":"Mohammadpur Shyamoli road pani knee deep. Gari choltese na. Food supply lagbe badly.","author":"shyamoli_updates","created_at":"2024-09-15T16:00:00","engagement":67},
+  {"id":"fb_009","platform":"facebook","text":"HELP! Badda Gulshan link road completely flooded! Rescue boat needed for elderly couple stuck in ground floor!","author":"badda_help","created_at":"2024-09-15T15:20:00","engagement":534,"has_media":true},
+  {"id":"fb_010","platform":"facebook","text":"Mirpur zoo road e waist deep water. Traffic completely jammed since 2 hours. People walking through flood water.","author":"mirpur_traffic","created_at":"2024-09-15T15:15:00","engagement":201},
+  {"id":"tw_011","platform":"twitter","text":"আমরা ১০ জন উত্তরায় আটকে আছি। পানি বাড়ছে। ছাদে আছি। কেউ সাহায্য করেন!","author":"uttara_help","created_at":"2024-09-15T16:10:00","engagement":445},
+  {"id":"fb_012","platform":"facebook","text":"Jatrabari Kadamtali bridge area completely submerged. Boats needed. At least 50 families affected.","author":"kadamtali_res","created_at":"2024-09-15T15:50:00","engagement":876,"has_media":true},
+  {"id":"fb_013","platform":"facebook","text":"Today cricket match cancelled due to rain. Sad day for Bangladesh fans!","author":"cricket_bd","created_at":"2024-09-15T14:10:00","engagement":340},
+  {"id":"tw_014","platform":"twitter","text":"Medical emergency in Mirpur 11! Pregnant woman trapped, water 4ft around house. Ambulance can't reach!","author":"mirpur_sos","created_at":"2024-09-15T16:15:00","engagement":1203,"has_media":true},
+  {"id":"fb_015","platform":"facebook","text":"Demra Matuail e 3 tin-shed bari venge gese pani te. 2 baccha missing. URGENT search needed!","author":"matuail_info","created_at":"2024-09-15T16:30:00","engagement":1567,"has_media":true},
+];
+
+function loadSamplePosts() {
+  document.getElementById('social_posts').value = JSON.stringify(SAMPLE_SOCIAL_POSTS, null, 2);
+  log('socialLog', `Loaded 15 sample posts (from Agent 1 sample_dataset_generator pattern)`, 'info');
+}
+
+async function submitSocial() {
+  let posts;
+  try {
+    posts = JSON.parse(document.getElementById('social_posts').value);
+  } catch(e) {
+    log('socialLog', '❌ Invalid JSON. Use the "Load Sample Data" button for correct format.', 'err');
+    return;
+  }
+  try {
+    const result = await apiPost('/ingest/social_media', posts);
+    log('socialLog', `✅ ${result.message}`, 'ok');
+  } catch(e) {
+    log('socialLog', `❌ API error: ${e.message}`, 'err');
+  }
+}
+
+// ── Satellite ──
+const SAMPLE_ALERTS = [
+  {"zone_id":"mirpur","flood_pct":37.5,"flood_depth_m":1.5,"risk_score":0.78,"severity":"high","timestamp":"2024-09-15T14:00:00"},
+  {"zone_id":"jatrabari","flood_pct":52.0,"flood_depth_m":2.1,"risk_score":0.89,"severity":"critical","timestamp":"2024-09-15T14:00:00"},
+  {"zone_id":"demra","flood_pct":28.0,"flood_depth_m":1.2,"risk_score":0.65,"severity":"high","timestamp":"2024-09-15T14:00:00"},
+  {"zone_id":"uttara","flood_pct":8.0,"flood_depth_m":0.4,"risk_score":0.35,"severity":"moderate","timestamp":"2024-09-15T14:00:00"},
+  {"zone_id":"dhanmondi","flood_pct":2.0,"flood_depth_m":0.1,"risk_score":0.15,"severity":"low","timestamp":"2024-09-15T14:00:00"},
+];
+
+function loadSampleAlerts() {
+  document.getElementById('sat_alerts').value = JSON.stringify(SAMPLE_ALERTS, null, 2);
+  log('satLog', 'Loaded 5 flood alerts (2024 Dhaka monsoon pattern)', 'info');
+}
+
+async function submitSatellite() {
+  let alerts;
+  try {
+    alerts = JSON.parse(document.getElementById('sat_alerts').value);
+  } catch(e) {
+    log('satLog', '❌ Invalid JSON', 'err');
+    return;
+  }
+  try {
+    const result = await apiPost('/ingest/flood_alerts', alerts);
+    log('satLog', `✅ ${result.message}`, 'ok');
+  } catch(e) {
+    log('satLog', `❌ API error: ${e.message}`, 'err');
+  }
+}
+
+// ── Processing & Queue ──
+async function triggerCycle() {
+  try {
+    await apiPost('/trigger', {});
+    log('hotlineLog', '▶ Processing cycle triggered', 'info');
+    log('smsLog', '▶ Processing cycle triggered', 'info');
+    // Wait a moment then refresh
+    setTimeout(refreshQueue, 1500);
+  } catch(e) {
+    log('hotlineLog', `❌ Trigger failed: ${e.message}`, 'err');
+  }
+}
+
+async function refreshQueue() {
+  try {
+    const queue = await apiGet('/queue');
+    renderQueue(queue);
+  } catch(e) {
+    // Silent fail if not connected
+  }
+}
+
+function renderQueue(items) {
+  const el = document.getElementById('queueList');
+  document.getElementById('queueCount').textContent = items.length;
+  
+  if (items.length === 0) {
+    el.innerHTML = '<div class="queue-empty">No distress items yet.<br>Submit data and trigger processing.</div>';
+    return;
+  }
+  
+  el.innerHTML = items.map((item, i) => {
+    const urgClass = 'qi-' + item.urgency;
+    const channelIcons = {social_media:'📱', sms_ussd:'💬', emergency_hotline:'📞', satellite_population:'🛰️'};
+    const icon = channelIcons[item.channel] || '📌';
+    const verified = item.flood_verified 
+      ? '<span class="qi-verified">✅ Verified</span>'
+      : '<span class="qi-unverified">❓ Unverified</span>';
+    
+    return `<div class="queue-item">
+      <div class="qi-header">
+        <span>${icon}</span>
+        <span class="qi-urgency ${urgClass}">${item.urgency.toUpperCase()}</span>
+        <span class="qi-zone">${item.zone_name || 'Unknown'}</span>
+        ${verified}
+        <span class="qi-score">${(item.priority_score * 100).toFixed(0)}</span>
+      </div>
+      <div class="qi-details">
+        ${item.distress_type.replace(/_/g,' ')}
+        ${item.people_count ? ' · ' + item.people_count + ' people' : ''}
+        ${item.water_level_meters ? ' · water: ' + item.water_level_meters.toFixed(1) + 'm' : ''}
+        ${item.needs_rescue ? ' · 🆘 RESCUE' : ''}
+      </div>
+      <div class="qi-details">Resources: ${(item.recommended_resources || []).join(', ')}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  resetHotline();
+  checkApi();
+  setInterval(checkApi, 10000);
+  setInterval(refreshQueue, 5000);
+});
+</script>
+</body>
+</html>
