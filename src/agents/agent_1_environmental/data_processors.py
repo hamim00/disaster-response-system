@@ -662,6 +662,7 @@ class DataProcessingOrchestrator:
             'normalized_weather': normalized_weather,
             'enriched_posts': enriched_posts,
             'social_analysis': social_analysis,
+            'satellite': zone_data.get('satellite'),
             'processed_at': datetime.utcnow()
         }
     

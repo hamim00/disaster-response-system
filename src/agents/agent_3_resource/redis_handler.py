@@ -86,7 +86,7 @@ class Agent3RedisHandler:
             await self._publish_inventory_update()
 
             logger.info(
-                "Allocated %d resources for %s (%s) → dispatching to Agent 4",
+                "Allocated %d resources for %s (%s) -> dispatching to Agent 4",
                 len(allocation.allocated_resources),
                 zone,
                 allocation.urgency,
@@ -112,7 +112,7 @@ class Agent3RedisHandler:
             await publish_message(self.redis, "dispatch_order", message)
         if self.db:
             await log_message_to_db(self.db, message)
-        self._last_action = f"dispatched {len(allocation.allocated_resources)} resources → {allocation.zone_name}"
+        self._last_action = f"dispatched {len(allocation.allocated_resources)} resources -> {allocation.zone_name}"
 
     async def _publish_inventory_update(self):
         """Publish current inventory snapshot to dashboard."""

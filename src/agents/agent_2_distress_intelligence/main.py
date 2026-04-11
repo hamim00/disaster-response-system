@@ -23,6 +23,7 @@ Version: 1.0.0
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -147,7 +148,8 @@ class DistressIntelligenceAgent:
                 self.config.redis_url,
                 decode_responses=True,
             )
-            logger.info("Redis connected")
+            await self.redis_client.ping()
+            logger.info("Redis connected and verified")
         except Exception as e:
             logger.warning(f"Redis connection failed (will work without it): {e}")
             self.redis_client = None
@@ -204,13 +206,13 @@ class DistressIntelligenceAgent:
                     priority=self._urgency_to_redis_priority(item.urgency),
                 )
                 
-                self.redis_client.publish(
+                await self.redis_client.publish(
                     "distress_queue",
                     message.model_dump_json(),
                 )
                 
                 # Also log to agent_messages (for dashboard)
-                self.redis_client.rpush(
+                await self.redis_client.rpush(
                     "agent_messages_log",
                     message.model_dump_json(),
                 )
@@ -219,6 +221,30 @@ class DistressIntelligenceAgent:
                 logger.error(f"Failed to publish distress item: {e}")
         
         logger.info(f"Published {len(queue)} items to distress_queue")
+    
+    async def _http_push_to_agent3(self, queue: List[DistressQueueItem]):
+        """HTTP fallback: push distress items directly to Agent 3's /trigger_batch."""
+        import aiohttp
+        agent3_url = os.getenv("AGENT3_URL", "http://localhost:8003")
+        payload = [item.model_dump(mode="json") for item in queue]
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{agent3_url}/trigger_batch",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        logger.info(
+                            f"HTTP push to Agent 3: {data.get('allocated', 0)} allocations "
+                            f"from {data.get('processed', 0)} items"
+                        )
+                    else:
+                        body = await resp.text()
+                        logger.warning(f"Agent 3 HTTP push returned {resp.status}: {body[:200]}")
+        except Exception as e:
+            logger.warning(f"Agent 3 HTTP push failed (non-fatal): {e}")
     
     async def run_processing_cycle(self) -> Agent2Output:
         """
@@ -291,6 +317,10 @@ class DistressIntelligenceAgent:
         # ── Step 4: Publish to Redis ──
         
         await self._publish_distress_queue(queue)
+        
+        # ── Step 4b: HTTP fallback — push to Agent 3 directly ──
+        if queue:
+            await self._http_push_to_agent3(queue)
         
         # ── Build output ──
         
@@ -452,13 +482,21 @@ async def get_queue():
 
 
 @app.post("/trigger")
-async def trigger_cycle(background_tasks: BackgroundTasks):
+async def trigger_cycle():
     """Manually trigger a processing cycle."""
     global agent
     if not agent:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    background_tasks.add_task(agent.run_processing_cycle)
-    return {"message": "Processing cycle triggered"}
+    try:
+        output = await agent.run_processing_cycle()
+        return {
+            "message": "Processing cycle completed",
+            "queue_size": output.queue_size if output else 0,
+            "critical_items": output.critical_items if output else 0,
+        }
+    except Exception as e:
+        logger.error(f"Triggered cycle failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest/social_media")

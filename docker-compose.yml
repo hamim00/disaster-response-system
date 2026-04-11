@@ -51,7 +51,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
     ports:
-      - "8001:8000"
+      - "8001:8001"
     networks:
       - disaster_network
     restart: unless-stopped
@@ -64,18 +64,58 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      agent1:
-        condition: service_started
     env_file:
       - .env
     environment:
-      - AGENT1_URL=http://agent1:8000
+      - AGENT1_URL=http://agent1:8001
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
     ports:
       - "8002:8002"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
+  agent3:
+    build:
+      context: .
+      dockerfile: src/agents/agent_3_resource/Dockerfile
+    container_name: agent3_resource_management
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://disaster_admin:disaster123@postgres:5432/disaster_response
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8003:8003"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
+  agent4:
+    build:
+      context: .
+      dockerfile: src/agents/agent_4_dispatch/Dockerfile
+    container_name: agent4_dispatch_optimization
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://disaster_admin:disaster123@postgres:5432/disaster_response
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8004:8004"
     networks:
       - disaster_network
     restart: unless-stopped

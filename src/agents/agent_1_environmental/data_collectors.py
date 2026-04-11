@@ -689,29 +689,35 @@ class DataCollectionOrchestrator:
         """
         logger.info(f"Collecting data for zone: {zone.name}")
         
-        # Build task list — weather + social always, satellite if available
-        weather_task = self.weather_collector.fetch_current_weather(zone.center)
-        forecast_task = self.weather_collector.fetch_forecast(zone.center, hours=24)
-        social_task = self.social_collector.fetch_recent_posts(zone, max_results=100)
-        
+        # Build task list dynamically — only include collectors that exist
+        tasks = []
+        task_keys = []
+
+        # Weather is always required
+        tasks.append(self.weather_collector.fetch_current_weather(zone.center))
+        task_keys.append("weather")
+
+        tasks.append(self.weather_collector.fetch_forecast(zone.center, hours=24))
+        task_keys.append("forecast")
+
+        # Social media — only if collector is available
+        if self.social_collector:
+            tasks.append(self.social_collector.fetch_recent_posts(zone, max_results=100))
+            task_keys.append("social_posts")
+
+        # Satellite — only if collector is available
         if self.satellite_collector:
-            satellite_task = self.satellite_collector.fetch_satellite_data(zone, str(zone.id))
-            
-            weather, forecast, social_posts, satellite = await asyncio.gather(
-                weather_task,
-                forecast_task,
-                social_task,
-                satellite_task,
-                return_exceptions=True
-            )
-        else:
-            weather, forecast, social_posts = await asyncio.gather(
-                weather_task,
-                forecast_task,
-                social_task,
-                return_exceptions=True
-            )
-            satellite = None
+            tasks.append(self.satellite_collector.fetch_satellite_data(zone, str(zone.id)))
+            task_keys.append("satellite")
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Map results back to named variables
+        gathered = dict(zip(task_keys, results))
+        weather = gathered.get("weather")
+        forecast = gathered.get("forecast")
+        social_posts = gathered.get("social_posts")
+        satellite = gathered.get("satellite")
         
         # Build merged result
         result = {

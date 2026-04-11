@@ -199,8 +199,8 @@ class ResourceAllocator:
                 )
                 allocated_units.append({
                     "unit_id":          str(unit.id),
-                    "type":             unit.resource_type.value,
-                    "name":             unit.name,
+                    "resource_type":    unit.resource_type.value,
+                    "unit_name":        unit.name,
                     "current_location": {
                         "latitude":  unit.current_location.latitude,
                         "longitude": unit.current_location.longitude,

@@ -84,7 +84,7 @@ class InventoryManager:
     async def snapshot(self) -> InventorySnapshot:
         """Build an InventorySnapshot from the inventory_summary view."""
         rows = await self.pool.fetch(
-            "SELECT resource_type, total, available, deployed, returning_count, maintenance "
+            "SELECT resource_type, total, available, deployed, \"returning\", maintenance "
             "FROM inventory_summary"
         )
         resources: Dict[str, Dict[str, int]] = {}
@@ -93,7 +93,7 @@ class InventoryManager:
                 "total":       r["total"],
                 "available":   r["available"],
                 "deployed":    r["deployed"],
-                "returning":   r["returning_count"],
+                "returning":   r["returning"],
                 "maintenance": r["maintenance"],
             }
         return InventorySnapshot(
@@ -134,7 +134,7 @@ class InventoryManager:
             incident_id=incident_id,
             zone_id=zone_id,
         )
-        logger.info("Deployed %s → incident %s", unit.name, incident_id)
+        logger.info("Deployed %s -> incident %s", unit.name, incident_id)
 
     async def add_units(
         self,

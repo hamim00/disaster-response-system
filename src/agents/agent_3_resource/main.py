@@ -137,9 +137,8 @@ async def lifespan(app: FastAPI):
 
     # ── PostgreSQL (REQUIRED for Agent 3) ──
     try:
-        pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
-        await pool.fetchval("SELECT 1")  # Verify connection
-        db_pool = pool
+        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        await db_pool.fetchval("SELECT 1")  # Verify connection
         logger.info("PostgreSQL connected and verified")
     except Exception as e:
         logger.error("PostgreSQL connection FAILED: %s", e)

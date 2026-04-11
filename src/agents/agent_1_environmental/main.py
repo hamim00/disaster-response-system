@@ -16,9 +16,12 @@ from typing import Dict, List, Optional, Any, cast
 import signal
 import sys
 import json
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import asyncpg
 from redis import asyncio as aioredis
 import uvicorn
@@ -174,94 +177,116 @@ class EnvironmentalIntelligenceAgent:
         logger.info(f"Agent {config.agent_id} initialized")
     
     async def startup(self):
-        """Initialize all components and connections"""
+        """Initialize all components and connections (graceful degradation)"""
         logger.info("Starting up Environmental Intelligence Agent...")
         
+        # ── Database (optional — degrade gracefully) ──
         try:
-            # Initialize database connection pool
             self.db_pool = await asyncpg.create_pool(
                 self.config.database_url,
-                min_size=5,
-                max_size=20
+                min_size=2,
+                max_size=10,
+                timeout=5,
             )
+            await self.db_pool.fetchval("SELECT 1")
             logger.info("Database connection pool created")
-            
-            # Initialize Redis
+        except Exception as e:
+            logger.warning(f"Database unavailable: {e} -- running without DB")
+            self.db_pool = None
+        
+        # ── Redis (optional — degrade gracefully) ──
+        try:
             self.redis_client = await aioredis.from_url(
                 self.config.redis_url,
-                decode_responses=True
+                decode_responses=True,
             )
-            logger.info("Redis connection established")
-            
-            # Initialize data collectors
+            await self.redis_client.ping()
+            logger.info("Redis connected and verified")
+        except Exception as e:
+            logger.warning(f"Redis unavailable: {e} -- running without cache/pubsub")
+            self.redis_client = None
+        
+        # ── Data collectors ──
+        try:
             self.weather_collector = WeatherAPICollector(
                 api_key=cast(str, self.config.openweather_api_key),
                 cache_client=self.redis_client
             )
-            
-            self.social_collector = SocialMediaCollector(
-                bearer_token=cast(str, self.config.twitter_bearer_token),
+            logger.info("Weather collector initialized")
+        except Exception as e:
+            logger.warning(f"Weather collector failed: {e}")
+        
+        # Twitter/X disabled — bearer token expired, not needed for flood pipeline
+        self.social_collector = None
+        logger.info("Social media collector disabled (Twitter removed)")
+        
+        # Satellite collector (GEE + CNN flood detection)
+        try:
+            self.satellite_collector = SatelliteDataCollector(
                 cache_client=self.redis_client
             )
-            
-            # Initialize satellite collector (GEE + CNN flood detection)
-            try:
-                self.satellite_collector = SatelliteDataCollector(
-                    cache_client=self.redis_client
-                )
-                logger.info("Satellite collector initialized")
-            except Exception as e:
-                logger.warning(f"Satellite collector unavailable: {e} — continuing without satellite data")
-                self.satellite_collector = None
-            
-            self.collection_orchestrator = DataCollectionOrchestrator(
-                weather_collector=self.weather_collector,
-                social_collector=self.social_collector,
-                satellite_collector=self.satellite_collector
-            )
-            logger.info("Data collectors initialized")
-            
-            # Initialize data processors
+            logger.info("Satellite collector initialized")
+        except Exception as e:
+            logger.warning(f"Satellite collector unavailable: {e} -- continuing without satellite data")
+            self.satellite_collector = None
+        
+        self.collection_orchestrator = DataCollectionOrchestrator(
+            weather_collector=self.weather_collector,
+            social_collector=self.social_collector,
+            satellite_collector=self.satellite_collector
+        )
+        logger.info("Data collectors initialized")
+        
+        # ── Data processors ──
+        try:
             self.llm_processor = LLMEnrichmentProcessor(
                 api_key=cast(str, self.config.openai_api_key)
             )
-            
-            self.weather_normalizer = WeatherDataNormalizer()
-            self.social_analyzer = SocialMediaAnalyzer()
-            
-            self.processing_orchestrator = DataProcessingOrchestrator(
-                llm_processor=self.llm_processor,
-                weather_normalizer=self.weather_normalizer,
-                social_analyzer=self.social_analyzer
-            )
-            logger.info("Data processors initialized")
-            
-            # Initialize spatial analyzer
-            self.spatial_analyzer = PostGISSpatialAnalyzer(
-                db_pool=cast(asyncpg.Pool, self.db_pool)
-            )
-            await self.spatial_analyzer.initialize_schema()
-            logger.info("Spatial analyzer initialized")
-            
-            # Initialize predictors
-            self.flood_predictor = FloodRiskPredictor()
-            self.alert_generator = AlertGenerator()
-            
-            self.prediction_orchestrator = PredictionOrchestrator(
-                predictor=self.flood_predictor,
-                alert_generator=self.alert_generator
-            )
-            logger.info("Prediction system initialized")
-            
-            # Load sentinel zones
-            await self.load_sentinel_zones()
-            
-            logger.info("✅ Agent startup complete")
-            
         except Exception as e:
-            logger.error(f"Startup failed: {e}", exc_info=True)
-            await self.shutdown()
-            raise
+            logger.warning(f"LLM processor failed: {e}")
+        
+        self.weather_normalizer = WeatherDataNormalizer()
+        self.social_analyzer = SocialMediaAnalyzer()
+        
+        self.processing_orchestrator = DataProcessingOrchestrator(
+            llm_processor=self.llm_processor,
+            weather_normalizer=self.weather_normalizer,
+            social_analyzer=self.social_analyzer
+        )
+        logger.info("Data processors initialized")
+        
+        # ── Spatial analyzer (needs DB) ──
+        if self.db_pool:
+            try:
+                self.spatial_analyzer = PostGISSpatialAnalyzer(
+                    db_pool=cast(asyncpg.Pool, self.db_pool)
+                )
+                await self.spatial_analyzer.initialize_schema()
+                logger.info("Spatial analyzer initialized")
+            except Exception as e:
+                logger.warning(f"Spatial analyzer failed: {e}")
+                self.spatial_analyzer = None
+        else:
+            logger.warning("Spatial analyzer skipped (no database)")
+        
+        # ── Predictors ──
+        self.flood_predictor = FloodRiskPredictor()
+        self.alert_generator = AlertGenerator()
+        
+        self.prediction_orchestrator = PredictionOrchestrator(
+            predictor=self.flood_predictor,
+            alert_generator=self.alert_generator
+        )
+        logger.info("Prediction system initialized")
+        
+        # ── Load sentinel zones ──
+        try:
+            await self.load_sentinel_zones()
+        except Exception as e:
+            logger.warning(f"Sentinel zones failed to load: {e} -- using defaults")
+            self.sentinel_zones = self._create_default_zones()
+        
+        logger.info("Agent startup complete")
     
     async def shutdown(self):
         """Cleanup and close all connections"""
@@ -286,27 +311,36 @@ class EnvironmentalIntelligenceAgent:
             await self.redis_client.close()
             logger.info("Redis connection closed")
         
-        logger.info("✅ Agent shutdown complete")
+        logger.info("Agent shutdown complete")
     
     async def load_sentinel_zones(self):
-        """Load sentinel zones from database or create default zones"""
-        # Try to load from database
+        """Load sentinel zones from database or create default zones."""
+        REQUIRED_ZONES = {"Mirpur", "Uttara", "Mohammadpur", "Dhanmondi",
+                          "Badda", "Jatrabari", "Demra", "Sylhet", "Sunamganj"}
+
         if self.db_pool is None:
-            logger.error("Database pool is not initialized.")
-            # Create default zones for Dhaka
             self.sentinel_zones = self._create_default_zones()
-            # Store in database if possible
-            if self.spatial_analyzer is not None:
-                for zone in self.sentinel_zones:
-                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_sentinel_zone(zone)
-            logger.info(f"Created {len(self.sentinel_zones)} default sentinel zones")
+            logger.info(f"Created {len(self.sentinel_zones)} default sentinel zones (no DB)")
             return
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM sentinel_zones;")
-            
-            if rows:
-                # Load existing zones
+            existing_names = {row['name'] for row in rows} if rows else set()
+
+            # If DB zones are stale (missing required zones), recreate
+            if not REQUIRED_ZONES.issubset(existing_names):
+                logger.info(f"DB has {existing_names} but need {REQUIRED_ZONES} -- recreating zones")
+                # Clear dependent tables first, then zones
+                await conn.execute("DELETE FROM flood_predictions;")
+                await conn.execute("DELETE FROM weather_data;")
+                await conn.execute("DELETE FROM social_media_posts;")
+                await conn.execute("DELETE FROM sentinel_zones;")
+                self.sentinel_zones = self._create_default_zones()
+                if self.spatial_analyzer:
+                    for zone in self.sentinel_zones:
+                        await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_sentinel_zone(zone)
+                logger.info(f"Created {len(self.sentinel_zones)} sentinel zones (matched to Agent 2)")
+            elif rows:
                 self.sentinel_zones = [
                     SentinelZone(
                         id=row['id'],
@@ -330,28 +364,14 @@ class EnvironmentalIntelligenceAgent:
                     for row in rows
                 ]
                 logger.info(f"Loaded {len(self.sentinel_zones)} sentinel zones from database")
-            else:
-                # Create default zones for Dhaka
-                self.sentinel_zones = self._create_default_zones()
-                
-                # Store in database
-                for zone in self.sentinel_zones:
-                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_sentinel_zone(zone)
-                
-                logger.info(f"Created {len(self.sentinel_zones)} default sentinel zones")
     
     def _create_default_zones(self) -> List[SentinelZone]:
-        """Create default sentinel zones for Dhaka, Bangladesh"""
+        """
+        Default sentinel zones for Bangladesh flood monitoring.
+        MUST match Agent 2's ZONE_COORDS so cross-referencing works.
+        Agents 2/3/4 use these same zone names and coordinates.
+        """
         return [
-            SentinelZone(
-                name="Dhaka Central",
-                center=GeoPoint(latitude=23.8103, longitude=90.4125),
-                radius_km=5.0,
-                risk_level=SeverityLevel.MODERATE,
-                population_density=45000,
-                elevation=6.0,
-                drainage_capacity="poor"
-            ),
             SentinelZone(
                 name="Mirpur",
                 center=GeoPoint(latitude=23.8223, longitude=90.3654),
@@ -362,24 +382,6 @@ class EnvironmentalIntelligenceAgent:
                 drainage_capacity="poor"
             ),
             SentinelZone(
-                name="Gulshan",
-                center=GeoPoint(latitude=23.7806, longitude=90.4175),
-                radius_km=3.0,
-                risk_level=SeverityLevel.LOW,
-                population_density=35000,
-                elevation=8.0,
-                drainage_capacity="moderate"
-            ),
-            SentinelZone(
-                name="Mohammadpur",
-                center=GeoPoint(latitude=23.7697, longitude=90.3611),
-                radius_km=4.0,
-                risk_level=SeverityLevel.MODERATE,
-                population_density=48000,
-                elevation=5.0,
-                drainage_capacity="poor"
-            ),
-            SentinelZone(
                 name="Uttara",
                 center=GeoPoint(latitude=23.8759, longitude=90.3795),
                 radius_km=4.5,
@@ -387,7 +389,70 @@ class EnvironmentalIntelligenceAgent:
                 population_density=42000,
                 elevation=7.0,
                 drainage_capacity="moderate"
-            )
+            ),
+            SentinelZone(
+                name="Mohammadpur",
+                center=GeoPoint(latitude=23.7662, longitude=90.3589),
+                radius_km=4.0,
+                risk_level=SeverityLevel.MODERATE,
+                population_density=48000,
+                elevation=5.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Dhanmondi",
+                center=GeoPoint(latitude=23.7461, longitude=90.3742),
+                radius_km=3.0,
+                risk_level=SeverityLevel.LOW,
+                population_density=38000,
+                elevation=7.0,
+                drainage_capacity="moderate"
+            ),
+            SentinelZone(
+                name="Badda",
+                center=GeoPoint(latitude=23.7806, longitude=90.4261),
+                radius_km=3.5,
+                risk_level=SeverityLevel.MODERATE,
+                population_density=40000,
+                elevation=5.5,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Jatrabari",
+                center=GeoPoint(latitude=23.7104, longitude=90.4348),
+                radius_km=3.5,
+                risk_level=SeverityLevel.HIGH,
+                population_density=55000,
+                elevation=3.5,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Demra",
+                center=GeoPoint(latitude=23.7225, longitude=90.4968),
+                radius_km=4.0,
+                risk_level=SeverityLevel.HIGH,
+                population_density=35000,
+                elevation=3.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Sylhet",
+                center=GeoPoint(latitude=24.8949, longitude=91.8687),
+                radius_km=6.0,
+                risk_level=SeverityLevel.CRITICAL,
+                population_density=15000,
+                elevation=2.0,
+                drainage_capacity="poor"
+            ),
+            SentinelZone(
+                name="Sunamganj",
+                center=GeoPoint(latitude=25.0715, longitude=91.3950),
+                radius_km=6.0,
+                risk_level=SeverityLevel.CRITICAL,
+                population_density=8000,
+                elevation=1.5,
+                drainage_capacity="poor"
+            ),
         ]
     
     async def run_monitoring_cycle(self) -> AgentOutput:
@@ -418,24 +483,30 @@ class EnvironmentalIntelligenceAgent:
             
             # Step 3: Perform spatial analysis
             logger.info("Step 3: Performing spatial analysis...")
-            assert self.spatial_analyzer is not None, "Spatial analyzer not initialized"
             spatial_results = {}
             satellite_summary = {}
             for data in processed_data:
                 zone = data['zone']
                 
-                # Store weather and social data
-                if data.get('weather'):
-                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_weather_data(
-                        data['weather'],
-                        str(zone.id)
-                    )
+                # Store weather and social data (skip if no DB/spatial analyzer)
+                if self.spatial_analyzer and data.get('weather'):
+                    try:
+                        await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_weather_data(
+                            data['weather'],
+                            str(zone.id)
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to store weather data for {zone.name}: {e}")
                 
-                for post in data.get('enriched_posts', []):
-                    await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_social_post(
-                        post,
-                        str(zone.id)
-                    )
+                if self.spatial_analyzer:
+                    for post in data.get('enriched_posts', []):
+                        try:
+                            await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).store_social_post(
+                                post,
+                                str(zone.id)
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to store social post for {zone.name}: {e}")
                 
                 # Carry satellite data forward for prediction
                 # (it was collected in Step 1 alongside weather+social)
@@ -454,13 +525,15 @@ class EnvironmentalIntelligenceAgent:
                     data['satellite_flood_area_km2'] = fd.flood_area_km2
                 
                 # Perform spatial analysis
-                spatial_result = await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).analyze_zone_spatial_patterns(
-                    zone
-                )
-                spatial_results[str(zone.id)] = spatial_result
-                
-                # Add spatial result to processed data
-                data['spatial_analysis'] = spatial_result
+                if self.spatial_analyzer:
+                    try:
+                        spatial_result = await cast(PostGISSpatialAnalyzer, self.spatial_analyzer).analyze_zone_spatial_patterns(
+                            zone
+                        )
+                        spatial_results[str(zone.id)] = spatial_result
+                        data['spatial_analysis'] = spatial_result
+                    except Exception as e:
+                        logger.warning(f"Spatial analysis failed for {zone.name}: {e}")
             
             if satellite_summary:
                 logger.info(f"   Satellite data merged for {len(satellite_summary)} zones")
@@ -539,7 +612,7 @@ class EnvironmentalIntelligenceAgent:
             self.last_update = datetime.utcnow()
             
             # Log summary
-            logger.info(f"✅ Monitoring cycle complete in {processing_time:.2f}s")
+            logger.info(f"Monitoring cycle complete in {processing_time:.2f}s")
             logger.info(f"   Predictions: {len(predictions)}")
             logger.info(f"   Alerts: {len(alerts)} ({len(output.critical_alerts)} critical)")
             logger.info(f"   Next update in: {next_update}s")
@@ -659,6 +732,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # =====================================================================
 # API ENDPOINTS
@@ -722,14 +802,14 @@ async def get_latest_output():
 
 
 @app.post("/trigger")
-async def trigger_monitoring_cycle(background_tasks: BackgroundTasks):
+async def trigger_monitoring_cycle():
     """Manually trigger a monitoring cycle"""
     global agent
     
     if not agent:
         raise HTTPException(status_code=503, detail="Agent not initialized")
     
-    background_tasks.add_task(agent.run_monitoring_cycle)
+    asyncio.create_task(agent.run_monitoring_cycle())
     
     return {"message": "Monitoring cycle triggered"}
 
@@ -758,6 +838,81 @@ async def get_zone_prediction(zone_id: str):
             return pred
     
     raise HTTPException(status_code=404, detail="Zone not found")
+
+
+# =====================================================================
+# SAR FLOOD DETECTION IMAGES
+# =====================================================================
+
+# Resolve the inference_results directory relative to this file
+_INFERENCE_DIR = Path(__file__).resolve().parent / "models" / "inference_results"
+
+# Map scenario keys to filenames
+_SAR_IMAGES = {
+    "before":   "prediction_1_light_flooding.png",    # baseline / light
+    "during":   "prediction_3_severe_flooding.png",   # active flooding
+    "moderate": "prediction_2_moderate_flooding.png",
+    "analysis_before": "analysis_1_light_flooding.png",
+    "analysis_during": "analysis_3_severe_flooding.png",
+    "comparison": "scenario_comparison.png",
+}
+
+
+@app.get("/sar/images/{scenario}")
+async def get_sar_image(scenario: str):
+    """
+    Serve SAR flood detection images for the dashboard.
+
+    Scenarios: before, during, moderate, analysis_before, analysis_during, comparison
+    """
+    filename = _SAR_IMAGES.get(scenario)
+    if not filename:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown scenario '{scenario}'. Available: {list(_SAR_IMAGES.keys())}",
+        )
+    filepath = _INFERENCE_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {filename}")
+    return FileResponse(filepath, media_type="image/png")
+
+
+@app.get("/sar/latest")
+async def get_sar_latest():
+    """
+    Return metadata + image URLs for the dashboard SAR panel.
+    The dashboard fetches this to populate the before/after view.
+    """
+    results_file = _INFERENCE_DIR / "inference_results.json"
+    metadata = {}
+    if results_file.exists():
+        with open(results_file) as f:
+            metadata = json.load(f)
+
+    # Pick the most relevant scenarios from inference results
+    scenarios = metadata.get("scenarios", [])
+    before_stats = scenarios[0] if len(scenarios) > 0 else {}
+    during_stats = scenarios[2] if len(scenarios) > 2 else {}
+
+    return {
+        "sar_available": True,
+        "sensor": "Sentinel-1",
+        "model": "U-Net CNN",
+        "accuracy": 94.64,
+        "before": {
+            "label": before_stats.get("scenario", "Light Flooding"),
+            "image_url": "/sar/images/before",
+            "flood_fraction": before_stats.get("flood_fraction", 0),
+            "flooded_area_km2": before_stats.get("flooded_area_km2", 0),
+        },
+        "during": {
+            "label": during_stats.get("scenario", "Severe Flooding"),
+            "image_url": "/sar/images/during",
+            "flood_fraction": during_stats.get("flood_fraction", 0),
+            "flooded_area_km2": during_stats.get("flooded_area_km2", 0),
+            "depth_stats": during_stats.get("depth_statistics", {}),
+        },
+    }
 
 
 # =====================================================================

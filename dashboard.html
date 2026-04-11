@@ -99,7 +99,11 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
 /* SAR PANEL */
 .sar-compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
-.sar-img{background:var(--s3);border:1px solid var(--brd);border-radius:6px;aspect-ratio:16/10;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;text-align:center}
+.sar-img{background:var(--s3);border:1px solid var(--brd);border-radius:6px;aspect-ratio:16/10;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;text-align:center;overflow:hidden;position:relative}
+.sar-img.has-img{padding:0;aspect-ratio:auto}
+.sar-img.has-img img{width:100%;height:auto;border-radius:5px;display:block}
+.sar-img.has-img .label{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.75);padding:2px 8px;border-radius:4px;z-index:1}
+.sar-img.has-img .sar-meta{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.85));padding:8px 10px 6px;font-size:10px;color:var(--dim);font-family:'JetBrains Mono'}
 .sar-img .label{font-size:9px;font-family:'JetBrains Mono';color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
 .sar-img .status{font-size:11px}
 
@@ -305,15 +309,15 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div class="pnl">
       <div class="pnl-h"><div class="pnl-t">🛰️ SAR Flood Detection</div><div class="pnl-c">Sentinel-1</div></div>
       <div class="pnl-b">
-        <div class="sar-compare">
-          <div class="sar-img">
+        <div class="sar-compare" id="sarPanel">
+          <div class="sar-img" id="sarBeforeBox">
             <div class="label">Before Flood</div>
-            <div style="font-size:28px;margin:6px 0;opacity:.3">🛰️</div>
+            <div style="font-size:28px;margin:6px 0;opacity:.3" id="sarBeforeIcon">🛰️</div>
             <div class="status" style="color:var(--dim)" id="sarBefore">Pre-monsoon baseline<br><span style="font-size:9px;color:var(--muted)">Sentinel-1 SAR image</span></div>
           </div>
-          <div class="sar-img">
+          <div class="sar-img" id="sarAfterBox">
             <div class="label">During Flood</div>
-            <div style="font-size:28px;margin:6px 0;opacity:.3">🌊</div>
+            <div style="font-size:28px;margin:6px 0;opacity:.3" id="sarAfterIcon">🌊</div>
             <div class="status" id="sarAfter"><span style="color:var(--orange)">CNN detects flood extent</span><br><span style="font-size:9px;color:var(--muted)">94.64% accuracy (U-Net)</span></div>
           </div>
         </div>
@@ -482,7 +486,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 <script>
 // ═══════════════════════════════════════════════════════════════
 const ZONES={mirpur:{lat:23.8223,lon:90.3654,name:"Mirpur"},uttara:{lat:23.8759,lon:90.3795,name:"Uttara"},mohammadpur:{lat:23.7662,lon:90.3589,name:"Mohammadpur"},dhanmondi:{lat:23.7461,lon:90.3742,name:"Dhanmondi"},badda:{lat:23.7806,lon:90.4261,name:"Badda"},jatrabari:{lat:23.7104,lon:90.4348,name:"Jatrabari"},demra:{lat:23.7225,lon:90.4968,name:"Demra"},sylhet:{lat:24.8949,lon:91.8687,name:"Sylhet"},sunamganj:{lat:25.0715,lon:91.395,name:"Sunamganj"}};
-const S={a2:{on:false,h:null,q:[],o:null},a3:{on:false,h:null,inv:null,al:[],st:null},a4:{on:false,h:null,disp:[],st:null},logs:[],seenQ:new Set(),seenA:new Set(),zd:{},floodZones:{}};
+const S={a1:{on:false,h:null},a2:{on:false,h:null,q:[],o:null},a3:{on:false,h:null,inv:null,al:[],st:null},a4:{on:false,h:null,disp:[],st:null},logs:[],seenQ:new Set(),seenA:new Set(),zd:{},floodZones:{}};
 let pollT=null,map=null,markers={};
 const u2=()=>document.getElementById('u2').value.replace(/\/$/,'');
 const u3=()=>document.getElementById('u3').value.replace(/\/$/,'');
@@ -528,6 +532,7 @@ function updateWeatherUI(w){
 }
 
 // POLLERS
+async function pollA1(){try{const h=await fetchJ('http://localhost:8001/health',2000);S.a1={on:true,h};if(!S.a1._w){log('AGENT-1','Connected — Environmental Intelligence online','ok');S.a1._w=true}}catch(e){if(S.a1.on||S.a1._w===undefined)log('AGENT-1',`Offline: ${e.message}`,'err');S.a1.on=false;S.a1._w=false}}
 async function pollA2(){try{const[h,q]=await Promise.all([fetchJ(`${u2()}/health`),fetchJ(`${u2()}/queue`)]);let o=null;try{o=await fetchJ(`${u2()}/output`)}catch{};S.a2={on:true,h,q,o};if(!S.a2._w){log('AGENT-2','Connected — Distress Intelligence online','ok');S.a2._w=true}}catch(e){if(S.a2.on||S.a2._w===undefined)log('AGENT-2',`Offline: ${e.message}`,'err');S.a2.on=false;S.a2._w=false}}
 async function pollA3(){try{const[h,al,st]=await Promise.all([fetchJ(`${u3()}/health`),fetchJ(`${u3()}/allocations?limit=50`),fetchJ(`${u3()}/status`)]);let inv=null;try{inv=await fetchJ(`${u3()}/inventory`)}catch{};S.a3={on:true,h,inv,al,st};if(!S.a3._w){log('AGENT-3','Connected — Resource Management online','ok');S.a3._w=true}}catch(e){if(S.a3.on||S.a3._w===undefined)log('AGENT-3',`Offline: ${e.message}`,'err');S.a3.on=false;S.a3._w=false}}
 
@@ -535,6 +540,12 @@ async function pollA4(){try{const[h,disp,st]=await Promise.all([fetchJ(`${u4()}/
 
 // PIPELINE
 function renderPipeline(){
+  // Agent 1
+  const p1=document.getElementById('p1');
+  p1.className=`pipe-status ${S.a1.on?'pipe-on':'pipe-off'}`;p1.textContent=S.a1.on?'ONLINE':'OFFLINE';
+  document.getElementById('pa1').className=`pipe-arrow ${S.a1.on&&S.a2.on?'live':'broken'}`;
+  document.getElementById('warnA1').classList.toggle('hidden',S.a1.on);
+  // Agent 2-3
   const p2=document.getElementById('p2'),p3=document.getElementById('p3');
   p2.className=`pipe-status ${S.a2.on?'pipe-on':'pipe-off'}`;p2.textContent=S.a2.on?'ONLINE':'OFFLINE';
   p3.className=`pipe-status ${S.a3.on?'pipe-on':'pipe-off'}`;p3.textContent=S.a3.on?'ONLINE':'OFFLINE';
@@ -732,16 +743,41 @@ async function sendSat(){const el=document.getElementById('satZ');let alerts;if(
 
 async function triggerCycle(){try{await postJ(`${u2()}/trigger`,{});log('SIM','Processing cycle triggered','ok');setTimeout(refreshAll,2000)}catch(e){log('SIM',`Trigger failed: ${e.message}`,'err')}}
 
+// SAR IMAGE LOADER — fetches once from Agent 1 then caches
+let _sarLoaded=false;
+async function loadSARImages(){
+  if(_sarLoaded||!S.a1.on) return;
+  try{
+    const d=await fetchJ('http://localhost:8001/sar/latest',3000);
+    if(!d.sar_available) return;
+    const base='http://localhost:8001';
+    // Before panel
+    const bb=document.getElementById('sarBeforeBox');
+    bb.classList.add('has-img');
+    bb.innerHTML=`<div class="label">Before Flood</div><img src="${base}${d.before.image_url}" alt="SAR Before"><div class="sar-meta">${d.before.label}<br>Flood: ${(d.before.flood_fraction*100).toFixed(1)}% · ${d.before.flooded_area_km2.toFixed(2)} km²</div>`;
+    // After panel
+    const ab=document.getElementById('sarAfterBox');
+    ab.classList.add('has-img');
+    ab.innerHTML=`<div class="label">During Flood</div><img src="${base}${d.during.image_url}" alt="SAR During"><div class="sar-meta">${d.during.label}<br>Flood: ${(d.during.flood_fraction*100).toFixed(1)}% · ${d.during.flooded_area_km2.toFixed(2)} km²</div>`;
+    document.getElementById('sarStatus').innerHTML=`<span style="color:var(--green)">✓</span> U-Net CNN · ${d.accuracy}% accuracy · Sentinel-1 SAR`;
+    _sarLoaded=true;
+    log('AGENT-1','SAR flood detection images loaded','ok');
+  }catch(e){/* Agent 1 may not have the endpoint yet — silent fail */}
+}
+
 // MAIN
 function updateClock(){document.getElementById('clk').textContent=new Date().toLocaleTimeString('en-US',{hour12:false})+' BST'}
 async function refreshAll(){
   document.getElementById('pDot').style.background='var(--cyan)';
-  await Promise.all([pollA2(),pollA3(),pollA4()]);
+  await Promise.all([pollA1(),pollA2(),pollA3(),pollA4()]);
   renderPipeline();renderChannels();renderFloodZones();renderQueue();renderInv();renderAlloc();renderDispatch();renderZones();
+  // Update SAR panel status
+  document.getElementById('sarStatus').textContent=S.a1.on?'Agent 1 online — SAR processing active':'Agent 1 offline — showing capability overview';
+  loadSARImages();
   if(map)updateMap();
   setTimeout(()=>document.getElementById('pDot').style.background='var(--green)',300);
 }
-function reconnect(){S.a2._w=undefined;S.a3._w=undefined;S.a4._w=undefined;log('SYSTEM','Reconnecting...','warn');refreshAll()}
+function reconnect(){S.a1._w=undefined;S.a2._w=undefined;S.a3._w=undefined;S.a4._w=undefined;log('SYSTEM','Reconnecting...','warn');refreshAll()}
 
 // INIT
 log('SYSTEM','FloodShield BD v3.0 — Autonomous Flood Response System','ok');

@@ -72,7 +72,12 @@ class SatelliteData:
             "processing_time_seconds": self.processing_time_seconds,
         }
         if self.flood_detection:
-            result["flood_detection"] = asdict(self.flood_detection)
+            fd = asdict(self.flood_detection)
+            # Convert numpy types to native Python for JSON serialization
+            for k, v in fd.items():
+                if hasattr(v, 'item'):  # numpy scalar
+                    fd[k] = v.item()
+            result["flood_detection"] = fd
         return result
 
 
