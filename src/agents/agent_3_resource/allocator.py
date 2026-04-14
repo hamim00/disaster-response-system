@@ -81,8 +81,10 @@ def _closest(
     units: List[ResourceUnit],
     destination: GeoPoint,
     count: int,
+    max_distance_km: float = 50.0,
 ) -> Tuple[List[ResourceUnit], bool]:
-    """Pick up to `count` nearest available units by Haversine distance."""
+    """Pick up to `count` nearest available units by Haversine distance.
+    Units beyond max_distance_km are excluded to prevent cross-region allocation."""
     scored = sorted(
         units,
         key=lambda u: haversine_km(
@@ -92,12 +94,20 @@ def _closest(
             destination.longitude,
         ),
     )
-    selected = scored[:count]
+    # Filter out units beyond max distance
+    nearby = [
+        u for u in scored
+        if haversine_km(
+            u.current_location.latitude, u.current_location.longitude,
+            destination.latitude, destination.longitude,
+        ) <= max_distance_km
+    ]
+    selected = nearby[:count]
     partial = len(selected) < count
     if partial:
         logger.warning(
-            "Resource shortfall: needed %d but only %d available",
-            count, len(selected),
+            "Resource shortfall: needed %d but only %d within %.0f km",
+            count, len(selected), max_distance_km,
         )
     return selected, partial
 
@@ -162,6 +172,8 @@ class ResourceAllocator:
 
     def __init__(self, inventory: InventoryManager):
         self.inventory = inventory
+        self._allocated_incidents: set = set()  # dedup by incident_id
+        self._zone_allocations: dict = {}       # dedup by zone+urgency: {zone: highest_urgency}
 
     async def allocate(self, incident: dict) -> Optional[ResourceAllocation]:
         """
@@ -172,6 +184,31 @@ class ResourceAllocator:
         """
         if not incident or not incident.get("location"):
             return None
+
+        # Deduplication: skip if already allocated for this incident
+        inc_id = incident.get("incident_id", "")
+        if inc_id in self._allocated_incidents:
+            logger.info("Skipping duplicate allocation for incident %s", inc_id)
+            return None
+        self._allocated_incidents.add(inc_id)
+        if len(self._allocated_incidents) > 500:
+            self._allocated_incidents = set(list(self._allocated_incidents)[-200:])
+
+        # Zone-level dedup: skip if this zone already has an equal-or-higher
+        # urgency allocation (prevents 3× LIFE_THREATENING for Mirpur)
+        zone_id = incident.get("zone_id", incident.get("zone_name", ""))
+        urgency = incident.get("urgency", AllocationUrgency.MODERATE)
+        urgency_rank = {"LIFE_THREATENING": 3, "URGENT": 2, "MODERATE": 1}
+        new_rank = urgency_rank.get(urgency, 1)
+        existing_rank = self._zone_allocations.get(zone_id, 0)
+
+        if existing_rank >= new_rank:
+            logger.info(
+                "Skipping %s allocation for zone %s — already has %s-level allocation",
+                urgency, zone_id, existing_rank,
+            )
+            return None
+        self._zone_allocations[zone_id] = new_rank
 
         urgency      = incident.get("urgency", AllocationUrgency.MODERATE)
         medical_need = incident.get("medical_need", False)

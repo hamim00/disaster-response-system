@@ -322,9 +322,16 @@ class FloodRiskFactors(BaseModel):
     )
     historical_risk: float = Field(0.0, ge=0, le=1, description="Based on zone history")
     
+    # --- River discharge (GloFAS) ---
+    river_discharge_factor: float = Field(
+        0.0, ge=0, le=1,
+        description="River discharge risk based on GloFAS percentile. 0 if unavailable."
+    )
+    
     # --- Metadata flags for dynamic weight redistribution ---
     has_satellite_data: bool = Field(False, description="Whether satellite data was available")
     has_social_data: bool = Field(False, description="Whether social media data was available")
+    has_river_data: bool = Field(False, description="Whether river discharge data was available")
     satellite_confirmed_flooding: bool = Field(
         False,
         description="True when satellite SAR detects active flooding in the zone"
@@ -335,46 +342,50 @@ class FloodRiskFactors(BaseModel):
         """
         Calculate weighted risk score with dynamic weight redistribution.
         
-        Weight philosophy:
-          - When satellite IS available: satellite dominates (ground truth > forecast)
-          - When satellite is NOT available: weather dominates (old behavior)
-          - Social media: included if available, redistributed if not
-          - Override: if satellite confirms active flooding, floor score at 0.65 (HIGH)
+        Weight philosophy (with all 4 data sources):
+          - Satellite (SAR):      0.25  (ground truth — sees actual water)
+          - River discharge:      0.20  (early warning — sees water BEFORE it floods)
+          - Weather:              0.20  (predictive but indirect)
+          - Zone/depth/social:    0.35  (supporting signals)
+          - Override: if satellite confirms active flooding, floor at 0.65 (HIGH)
+                      if ANY source is CRITICAL, floor at 0.60
         """
         if self.has_satellite_data:
             # --- SATELLITE-AVAILABLE MODE ---
-            # Satellite is ground truth — highest weight
             weights = {
-                'satellite_flood_detection': 0.25,  # Strongest signal
-                'flood_depth_estimate': 0.12,
-                'rainfall_intensity': 0.15,          # "Will it worsen?"
-                'accumulated_rainfall': 0.10,
-                'weather_severity': 0.08,
+                'satellite_flood_detection': 0.25,
+                'river_discharge_factor': 0.20,
+                'flood_depth_estimate': 0.08,
+                'rainfall_intensity': 0.12,
+                'accumulated_rainfall': 0.07,
+                'weather_severity': 0.05,
+                'drainage_factor': 0.08,
+                'elevation_factor': 0.03,
+                'social_reports_density': 0.04,
+                'historical_risk': 0.08,
+            }
+        else:
+            # --- WEATHER-ONLY FALLBACK MODE ---
+            weights = {
+                'satellite_flood_detection': 0.0,
+                'river_discharge_factor': 0.25,
+                'flood_depth_estimate': 0.0,
+                'rainfall_intensity': 0.20,
+                'accumulated_rainfall': 0.15,
+                'weather_severity': 0.10,
                 'drainage_factor': 0.10,
                 'elevation_factor': 0.05,
                 'social_reports_density': 0.05,
                 'historical_risk': 0.10,
             }
-        else:
-            # --- WEATHER-ONLY FALLBACK MODE ---
-            # No satellite — weather dominates (backward-compatible behavior)
-            weights = {
-                'satellite_flood_detection': 0.0,
-                'flood_depth_estimate': 0.0,
-                'rainfall_intensity': 0.25,
-                'accumulated_rainfall': 0.20,
-                'weather_severity': 0.15,
-                'drainage_factor': 0.10,
-                'elevation_factor': 0.05,
-                'social_reports_density': 0.10,
-                'historical_risk': 0.15,
-            }
         
-        # Zero out social weight if data not available
+        # Zero out unavailable sources
         if not self.has_social_data:
             weights['social_reports_density'] = 0.0
+        if not self.has_river_data:
+            weights['river_discharge_factor'] = 0.0
         
-        # Normalize weights to sum to 1.0 (redistributes removed weights)
+        # Normalize weights to sum to 1.0
         total_weight = sum(weights.values())
         if total_weight > 0:
             weights = {k: v / total_weight for k, v in weights.items()}
@@ -387,6 +398,7 @@ class FloodRiskFactors(BaseModel):
             self.accumulated_rainfall * weights['accumulated_rainfall'] +
             self.weather_severity * weights['weather_severity'] +
             self.satellite_flood_detection * weights['satellite_flood_detection'] +
+            self.river_discharge_factor * weights['river_discharge_factor'] +
             self.flood_depth_estimate * weights['flood_depth_estimate'] +
             self.drainage_factor * weights['drainage_factor'] +
             self.elevation_factor * weights['elevation_factor'] +
@@ -394,9 +406,7 @@ class FloodRiskFactors(BaseModel):
             self.historical_risk * weights['historical_risk']
         )
         
-        # SATELLITE OVERRIDE: If satellite confirms active flooding,
-        # the score CANNOT be below HIGH threshold regardless of other factors.
-        # Rationale: satellite is observing reality, not predicting it.
+        # SATELLITE OVERRIDE: floor at HIGH
         if self.satellite_confirmed_flooding:
             score = max(score, 0.65)
         

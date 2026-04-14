@@ -67,36 +67,52 @@ handler: Optional[Agent3RedisHandler] = None
 # BIWTA river stations, major hospitals, Mohakhali depots
 # ---------------------------------------------------------------------------
 SEED_RESOURCES = [
-    # Rescue boats — BIWTA river stations + district boats
+    # ── Rescue boats ────────────────────────────────────────────────
+    # Dhaka cluster (serves Mirpur/Uttara/Mohammadpur/Dhanmondi/Badda/Jatrabari/Demra)
     {"type": "rescue_boat", "name": "Boat Mirpur-1",     "capacity": 15, "lat": 23.8041, "lon": 90.3654},
     {"type": "rescue_boat", "name": "Boat Mirpur-2",     "capacity": 15, "lat": 23.8041, "lon": 90.3654},
     {"type": "rescue_boat", "name": "Boat Sadarghat-1",  "capacity": 20, "lat": 23.7104, "lon": 90.4074},
     {"type": "rescue_boat", "name": "Boat Sadarghat-2",  "capacity": 20, "lat": 23.7104, "lon": 90.4074},
+    # Sylhet cluster
     {"type": "rescue_boat", "name": "Boat Sylhet-1",     "capacity": 12, "lat": 24.8949, "lon": 91.8687},
     {"type": "rescue_boat", "name": "Boat Sylhet-2",     "capacity": 12, "lat": 24.8949, "lon": 91.8687},
-    {"type": "rescue_boat", "name": "Boat Sirajganj-1",  "capacity": 18, "lat": 24.4534, "lon": 89.7007},
+    {"type": "rescue_boat", "name": "Boat Sylhet-3",     "capacity": 12, "lat": 24.8900, "lon": 91.8750},
+    # Sunamganj cluster
     {"type": "rescue_boat", "name": "Boat Sunamganj-1",  "capacity": 10, "lat": 25.0715, "lon": 91.3953},
+    {"type": "rescue_boat", "name": "Boat Sunamganj-2",  "capacity": 10, "lat": 25.0700, "lon": 91.3980},
+    {"type": "rescue_boat", "name": "Boat Sunamganj-3",  "capacity": 12, "lat": 25.0650, "lon": 91.4000},
+    # Sirajganj cluster
+    {"type": "rescue_boat", "name": "Boat Sirajganj-1",  "capacity": 18, "lat": 24.4534, "lon": 89.7007},
+    {"type": "rescue_boat", "name": "Boat Sirajganj-2",  "capacity": 15, "lat": 24.4580, "lon": 89.7050},
 
-    # Medical teams — major hospitals
-    {"type": "medical_team", "name": "MedTeam DMCH",         "capacity": 50, "lat": 23.7465, "lon": 90.3760},
-    {"type": "medical_team", "name": "MedTeam Dhaka-2",      "capacity": 40, "lat": 23.7376, "lon": 90.3957},
-    {"type": "medical_team", "name": "MedTeam MAG Osmani",   "capacity": 30, "lat": 24.8998, "lon": 91.8710},
-    {"type": "medical_team", "name": "MedTeam Sirajganj",    "capacity": 25, "lat": 24.4600, "lon": 89.7100},
+    # ── Medical teams ───────────────────────────────────────────────
+    # Dhaka
+    {"type": "medical_team", "name": "MedTeam DMCH",           "capacity": 50, "lat": 23.7465, "lon": 90.3760},
+    {"type": "medical_team", "name": "MedTeam Dhaka-2",        "capacity": 40, "lat": 23.7376, "lon": 90.3957},
+    # Sylhet
+    {"type": "medical_team", "name": "MedTeam MAG Osmani",     "capacity": 30, "lat": 24.8998, "lon": 91.8710},
+    # Sunamganj
+    {"type": "medical_team", "name": "MedTeam Sunamganj",      "capacity": 20, "lat": 25.0700, "lon": 91.3950},
+    # Sirajganj
+    {"type": "medical_team", "name": "MedTeam Sirajganj",      "capacity": 25, "lat": 24.4600, "lon": 89.7100},
 
-    # Medical kits — depot stockpiles
+    # ── Medical kits ────────────────────────────────────────────────
     {"type": "medical_kit", "name": "Kit-Depot-Dhaka-1",    "capacity": 100, "lat": 23.8103, "lon": 90.4125},
     {"type": "medical_kit", "name": "Kit-Depot-Dhaka-2",    "capacity": 100, "lat": 23.7500, "lon": 90.3800},
-    {"type": "medical_kit", "name": "Kit-Depot-Sylhet",     "capacity":  60, "lat": 24.9000, "lon": 91.8700},
-    {"type": "medical_kit", "name": "Kit-Depot-Chittagong", "capacity":  80, "lat": 22.3569, "lon": 91.7832},
+    {"type": "medical_kit", "name": "Kit-Depot-Sylhet-1",   "capacity":  60, "lat": 24.9000, "lon": 91.8700},
+    {"type": "medical_kit", "name": "Kit-Depot-Sylhet-2",   "capacity":  60, "lat": 24.8950, "lon": 91.8650},
+    {"type": "medical_kit", "name": "Kit-Depot-Sunamganj-1","capacity":  40, "lat": 25.0700, "lon": 91.3900},
+    {"type": "medical_kit", "name": "Kit-Depot-Sunamganj-2","capacity":  40, "lat": 25.0650, "lon": 91.3950},
+    {"type": "medical_kit", "name": "Kit-Depot-Sirajganj",  "capacity":  50, "lat": 24.4550, "lon": 89.7050},
 
-    # Food supply depots — Mohakhali + district
+    # ── Food supply ─────────────────────────────────────────────────
     {"type": "food_supply", "name": "Food-Mohakhali-1",  "capacity": 500, "lat": 23.7781, "lon": 90.4070},
     {"type": "food_supply", "name": "Food-Mohakhali-2",  "capacity": 500, "lat": 23.7781, "lon": 90.4070},
     {"type": "food_supply", "name": "Food-Sylhet",       "capacity": 300, "lat": 24.8900, "lon": 91.8650},
     {"type": "food_supply", "name": "Food-Sirajganj",    "capacity": 400, "lat": 24.4500, "lon": 89.7050},
     {"type": "food_supply", "name": "Food-Sunamganj",    "capacity": 250, "lat": 25.0700, "lon": 91.3900},
 
-    # Water supply depots
+    # ── Water supply ────────────────────────────────────────────────
     {"type": "water_supply", "name": "Water-Mohakhali-1", "capacity": 1000, "lat": 23.7781, "lon": 90.4070},
     {"type": "water_supply", "name": "Water-Mohakhali-2", "capacity": 1000, "lat": 23.7781, "lon": 90.4070},
     {"type": "water_supply", "name": "Water-Sylhet",      "capacity":  600, "lat": 24.8900, "lon": 91.8650},
@@ -383,6 +399,44 @@ async def status():
         "db_connected":     db_pool is not None,
         "redis_connected":  redis_client is not None,
     }
+
+
+@app.post("/inventory/reset")
+async def reset_inventory():
+    """
+    Reset all resources to available status and clear allocations/dispatches.
+    Used for defense day re-demos.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM team_routes")
+            await conn.execute("DELETE FROM dispatch_routes")
+            await conn.execute("DELETE FROM resource_allocations")
+            await conn.execute("""
+                UPDATE resource_units
+                SET status = 'available',
+                    current_location = base_location,
+                    assigned_zone_id = NULL,
+                    assigned_incident_id = NULL,
+                    deployed_at = NULL,
+                    updated_at = NOW()
+            """)
+            count = await conn.fetchval("SELECT COUNT(*) FROM resource_units")
+
+        if handler:
+            handler._allocations_count = 0
+            handler.allocator._allocated_incidents.clear()
+            handler.allocator._zone_allocations.clear()
+
+        logger.info("Inventory reset: %d resources restored to available", count)
+        return {"status": "ok", "resources_restored": count}
+
+    except Exception as exc:
+        logger.error("Inventory reset failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

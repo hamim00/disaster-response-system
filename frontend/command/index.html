@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodShield BD — Command Center</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+Bengali:wght@400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #08090c;
+    --surface: #0f1117;
+    --surface2: #181c24;
+    --border: #222830;
+    --text: #b4bfcc;
+    --text-dim: #5a6577;
+    --white: #e8edf4;
+    --green: #00e676;
+    --blue: #448aff;
+    --amber: #ffc400;
+    --red: #ff1744;
+    --purple: #b388ff;
+    --cyan: #00e5ff;
+    --critical: #ff1744;
+    --high: #ff6d00;
+    --medium: #ffab00;
+    --low: #69f0ae;
+  }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    height: 44px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-title { font-size: 14px; font-weight: 700; color: var(--white); }
+  .topbar-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .badge-live { background: rgba(255,23,68,0.15); color: var(--red); }
+  .topbar-right { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--text-dim); }
+  .conn-indicator { display: flex; align-items: center; gap: 4px; }
+  .conn-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .conn-ok { background: var(--green); }
+  .conn-off { background: var(--red); }
+
+  /* Pipeline banner */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    padding: 6px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    gap: 0;
+    font-size: 11px;
+    overflow-x: auto;
+  }
+  .pipe-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    white-space: nowrap;
+  }
+  .pipe-num {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-dim);
+  }
+  .pipe-active .pipe-num { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .pipe-arrow { color: var(--border); font-size: 14px; }
+
+  /* Main grid */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 320px;
+    grid-template-rows: 1fr 1fr;
+    height: calc(100vh - 80px);
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .panel {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .panel-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  /* Map panel — spans 2 columns */
+  .map-panel { grid-column: 1 / 3; grid-row: 1; }
+  #cmd-map { width: 100%; height: 100%; }
+  .leaflet-tile-pane {
+    filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+  }
+
+  /* Right column: Alerts feed */
+  .alerts-panel { grid-column: 3; grid-row: 1 / 3; }
+  .alert-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    animation: fadeIn 0.3s;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .alert-time { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); }
+  .alert-type {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 3px 0;
+  }
+  .alert-msg { color: var(--text); line-height: 1.4; }
+
+  .type-intake { color: var(--cyan); }
+  .type-dispatch { color: var(--blue); }
+  .type-team { color: var(--green); }
+  .type-ground { color: var(--amber); }
+  .type-resupply { color: var(--red); }
+  .type-verified { color: var(--purple); }
+
+  /* Bottom-left: Team Tracker */
+  .teams-panel { grid-column: 1; grid-row: 2; }
+  .team-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .team-info { display: flex; align-items: center; gap: 8px; }
+  .team-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-standby { background: var(--green); }
+  .dot-en_route { background: var(--blue); }
+  .dot-on_site { background: var(--amber); }
+  .dot-returning { background: var(--purple); }
+  .dot-unreachable { background: var(--red); animation: pulse 1s infinite; }
+  .dot-dispatched { background: var(--cyan); }
+  .team-name-cell { font-weight: 600; color: var(--white); }
+  .team-status-cell { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+  .team-mission-cell { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); }
+
+  /* Bottom-center: Inventory */
+  .inventory-panel { grid-column: 2; grid-row: 2; }
+  .inv-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .inv-name { font-weight: 600; }
+  .inv-bar {
+    width: 80px;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 0 10px;
+    flex-shrink: 0;
+  }
+  .inv-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .fill-good { background: var(--green); }
+  .fill-warn { background: var(--amber); }
+  .fill-danger { background: var(--red); }
+  .inv-count { font-family: 'JetBrains Mono', monospace; font-size: 11px; min-width: 50px; text-align: right; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-title">⚡ FloodShield BD — Command Center</div>
+    <span class="topbar-badge badge-live">● LIVE</span>
+  </div>
+  <div class="topbar-right">
+    <span id="intakeCounter">Intake: 0</span>
+    <span id="activeTeams">Teams: 0 active</span>
+    <div class="conn-indicator">
+      <div class="conn-dot" id="wsDot"></div>
+      <span id="wsStatus">Connecting</span>
+    </div>
+  </div>
+</div>
+
+<!-- Pipeline Banner -->
+<div class="pipeline">
+  <div class="pipe-step pipe-active"><span class="pipe-num">1</span>999 Gateway</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-step pipe-active"><span class="pipe-num">2</span>Distress Intel</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-step pipe-active"><span class="pipe-num">3</span>Resource Mgmt</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-step pipe-active"><span class="pipe-num">4</span>Dispatch</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-step pipe-active"><span class="pipe-num">5</span>Field Teams</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-step pipe-active"><span class="pipe-num">6</span>Feedback Loop</div>
+</div>
+
+<!-- Main Grid -->
+<div class="main-grid">
+  <!-- MAP -->
+  <div class="panel map-panel">
+    <div id="cmd-map"></div>
+  </div>
+
+  <!-- ALERTS FEED (right column, full height) -->
+  <div class="panel alerts-panel">
+    <div class="panel-header">
+      <span>Live Feed</span>
+      <span class="panel-count" id="alertCount">0</span>
+    </div>
+    <div class="panel-body" id="alertFeed"></div>
+  </div>
+
+  <!-- TEAM TRACKER (bottom-left) -->
+  <div class="panel teams-panel">
+    <div class="panel-header">
+      <span>Field Teams</span>
+      <span class="panel-count" id="teamCount">5</span>
+    </div>
+    <div class="panel-body" id="teamList"></div>
+  </div>
+
+  <!-- INVENTORY (bottom-center) -->
+  <div class="panel inventory-panel">
+    <div class="panel-header">
+      <span>Resource Inventory</span>
+    </div>
+    <div class="panel-body" id="inventoryList">
+      <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px">Loading inventory…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws/command`;
+
+let ws = null;
+let map = null;
+let alertCount = 0;
+let intakeCount = 0;
+let teamMarkers = {};
+let distressMarkers = [];
+
+// ---- Map ----
+function initMap() {
+    map = L.map('cmd-map', {zoomControl: true}).setView([25.0, 91.45], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM'}).addTo(map);
+}
+
+function addDistressMarker(lat, lng, urgency, label) {
+    if (!map || !lat || !lng) return;
+    const colors = {critical:'#ff1744',high:'#ff6d00',medium:'#ffab00',low:'#69f0ae'};
+    const c = colors[urgency] || '#42a5f5';
+    const m = L.circleMarker([lat, lng], {
+        radius: urgency === 'critical' ? 9 : 6,
+        fillColor: c, fillOpacity: 0.7, color: c, weight: 2
+    }).addTo(map);
+    if (label) m.bindTooltip(label, {permanent: false});
+    distressMarkers.push(m);
+    return m;
+}
+
+function updateTeamMarker(teamId, lat, lng, status) {
+    if (!map || !lat || !lng) return;
+    const colors = {standby:'#00e676',en_route:'#448aff',on_site:'#ffc400',returning:'#b388ff',unreachable:'#ff1744',dispatched:'#00e5ff'};
+    const c = colors[status] || '#888';
+    if (teamMarkers[teamId]) {
+        teamMarkers[teamId].setLatLng([lat, lng]);
+        teamMarkers[teamId].setStyle({fillColor: c, color: c});
+    } else {
+        teamMarkers[teamId] = L.circleMarker([lat, lng], {
+            radius: 7, fillColor: c, fillOpacity: 1, color: '#fff', weight: 2
+        }).addTo(map);
+        teamMarkers[teamId].bindTooltip(teamId, {permanent: true, direction: 'right', className: ''});
+    }
+}
+
+// ---- WebSocket ----
+function connectWS() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+        document.getElementById('wsDot').classList.add('conn-ok');
+        document.getElementById('wsDot').classList.remove('conn-off');
+        document.getElementById('wsStatus').textContent = 'Connected';
+    };
+    ws.onclose = () => {
+        document.getElementById('wsDot').classList.add('conn-off');
+        document.getElementById('wsDot').classList.remove('conn-ok');
+        document.getElementById('wsStatus').textContent = 'Reconnecting';
+        setTimeout(connectWS, 2000);
+    };
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleWSMessage(msg);
+    };
+}
+
+function handleWSMessage(msg) {
+    const t = msg.type;
+    const d = msg.data || {};
+
+    if (t === 'new_intake') {
+        if (d.type === 'scenario_complete') { addAlert('system', '✓ Scenario complete — all events processed'); return; }
+        intakeCount++;
+        document.getElementById('intakeCounter').textContent = `Intake: ${intakeCount}`;
+        addAlert('intake', `${(d.source_type||'sms').replace('_',' ').toUpperCase()} — ${d.location_description || 'Unknown'}: "${(d.raw_message||'').substring(0,60)}…"  [${(d.auto_detected_urgency||'medium').toUpperCase()}]`);
+        const loc = d.location || {};
+        addDistressMarker(loc.lat, loc.lng, d.auto_detected_urgency, d.location_description);
+    }
+    else if (t === 'verified_distress') {
+        addAlert('verified', `Verified: ${d.zone_name || 'Zone'} — Priority ${d.urgency || 'high'}, ${d.people_count || '?'} affected`);
+    }
+    else if (t === 'dispatch_order' || t === 'dispatch_sent') {
+        addAlert('dispatch', `Dispatch #${d.dispatch_id || '?'} → ${d.team_id || 'Team'} — ${d.destination_name || d.zone_name || 'Zone'}`);
+    }
+    else if (t === 'team_response') {
+        const icon = d.response === 'accepted' ? '✓' : '✗';
+        addAlert('team', `${icon} ${d.team_id} ${d.response} dispatch #${d.dispatch_id}`);
+        refreshTeams();
+    }
+    else if (t === 'team_location') {
+        updateTeamMarker(d.team_id, d.lat, d.lng, 'en_route');
+    }
+    else if (t === 'team_status') {
+        addAlert('team', `${d.team_id} → ${(d.status||'').replace(/_/g,' ').toUpperCase()}`);
+        refreshTeams();
+    }
+    else if (t === 'ground_report') {
+        addAlert('ground', `⚠️ Ground Report: Actual ${d.actual_affected_count || '?'} vs Est. ${d.estimated_affected_count || '?'} — ${d.area_accessibility || ''}, Water: ${d.water_level_observation || ''}`);
+    }
+    else if (t === 'resource_consumed') {
+        const items = (d.consumption || []).map(c => `${c.type}: used ${c.consumed}/${c.sent}`).join(', ');
+        addAlert('resupply', `${d.team_id} consumption: ${items}`);
+    }
+    else if (t === 'resupply_alert') {
+        addAlert('resupply', `🔔 Resupply needed: ${d.type || 'unknown'} — ${d.additional_resources || JSON.stringify(d)}`);
+    }
+}
+
+function addAlert(type, text) {
+    alertCount++;
+    document.getElementById('alertCount').textContent = alertCount;
+    const feed = document.getElementById('alertFeed');
+    const time = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const div = document.createElement('div');
+    div.className = 'alert-item';
+    div.innerHTML = `
+        <div class="alert-time">${time}</div>
+        <div class="alert-type type-${type}">${type.replace('_',' ')}</div>
+        <div class="alert-msg">${text}</div>
+    `;
+    feed.insertBefore(div, feed.firstChild);
+    while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+}
+
+// ---- Teams ----
+async function refreshTeams() {
+    try {
+        const r = await fetch(`${API}/api/field/teams`);
+        const teams = await r.json();
+        const list = document.getElementById('teamList');
+        list.innerHTML = teams.map(t => `
+            <div class="team-row">
+                <div class="team-info">
+                    <div class="team-dot dot-${t.status}"></div>
+                    <div>
+                        <div class="team-name-cell">${t.team_name}</div>
+                        <div class="team-status-cell">${(t.status||'').replace(/_/g,' ')}</div>
+                    </div>
+                </div>
+                <div class="team-mission-cell">${t.current_mission_id ? 'Mission #'+t.current_mission_id : '—'}</div>
+            </div>
+        `).join('');
+        document.getElementById('teamCount').textContent = teams.length;
+
+        // Update active count
+        const active = teams.filter(t => !['standby','off_duty'].includes(t.status)).length;
+        document.getElementById('activeTeams').textContent = `Teams: ${active} active`;
+
+        // Update map markers
+        teams.forEach(t => {
+            if (t.current_lat && t.current_lng)
+                updateTeamMarker(t.team_id, t.current_lat, t.current_lng, t.status);
+        });
+    } catch(e) { console.error('Teams refresh failed:', e); }
+}
+
+// ---- Inventory ----
+async function refreshInventory() {
+    try {
+        const r = await fetch(`${API.replace(':8000',':8003')}/inventory`);
+        const data = await r.json();
+        const list = document.getElementById('inventoryList');
+        const summary = data.summary || {};
+
+        if (Object.keys(summary).length === 0) {
+            list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px">No inventory data</div>';
+            return;
+        }
+
+        list.innerHTML = Object.entries(summary).map(([type, info]) => {
+            const avail = info.available || 0;
+            const total = info.total || 1;
+            const pct = Math.round((avail / total) * 100);
+            const fillClass = pct > 70 ? 'fill-good' : pct > 30 ? 'fill-warn' : 'fill-danger';
+            return `
+                <div class="inv-row">
+                    <span class="inv-name">${type.replace(/_/g, ' ')}</span>
+                    <div class="inv-bar"><div class="inv-fill ${fillClass}" style="width:${pct}%"></div></div>
+                    <span class="inv-count">${avail}/${total}</span>
+                </div>
+            `;
+        }).join('');
+    } catch(e) {
+        // Try local inventory display from hardcoded seed data
+        const fallback = [
+            {name:'Rescue Boats', avail:12, total:12},
+            {name:'Medical Teams', avail:5, total:5},
+            {name:'Medical Kits', avail:450, total:450},
+            {name:'Food Supply', avail:1950, total:1950},
+            {name:'Water Supply', avail:3900, total:3900},
+        ];
+        const list = document.getElementById('inventoryList');
+        list.innerHTML = fallback.map(f => {
+            const pct = Math.round((f.avail/f.total)*100);
+            return `<div class="inv-row">
+                <span class="inv-name">${f.name}</span>
+                <div class="inv-bar"><div class="inv-fill fill-good" style="width:${pct}%"></div></div>
+                <span class="inv-count">${f.avail}/${f.total}</span>
+            </div>`;
+        }).join('');
+    }
+}
+
+// ---- Init ----
+initMap();
+connectWS();
+refreshTeams();
+refreshInventory();
+setInterval(refreshTeams, 10000);
+setInterval(refreshInventory, 15000);
+</script>
+</body>
+</html>

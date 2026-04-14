@@ -68,6 +68,7 @@ services:
       - .env
     environment:
       - AGENT1_URL=http://agent1:8001
+      - AGENT3_URL=http://agent3:8003
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./src:/app/src
@@ -116,6 +117,60 @@ services:
       - REDIS_URL=redis://redis:6379
     ports:
       - "8004:8004"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
+  # =====================================================
+  # NEW: Scenario Feeder — auto-plays events into Redis
+  # =====================================================
+  scenario-feeder:
+    build:
+      context: ./scenario_feeder
+      dockerfile: Dockerfile
+    container_name: floodshield_feeder
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://disaster_admin:disaster123@postgres:5432/disaster_response
+      - SCENARIO_FILE=/data/scenarios/sylhet_flood_2024.json
+      - SPEED_MULTIPLIER=5
+      - AUTO_START=false
+      - FEEDER_PORT=8010
+    volumes:
+      - ./scenarios:/data/scenarios:ro
+    ports:
+      - "8010:8010"
+    networks:
+      - disaster_network
+    restart: unless-stopped
+
+  # =====================================================
+  # NEW: Unified Backend — serves Gateway, Field, Command
+  # =====================================================
+  unified-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: floodshield_backend
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://disaster_admin:disaster123@postgres:5432/disaster_response
+      - BACKEND_PORT=8000
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    ports:
+      - "8000:8000"
     networks:
       - disaster_network
     restart: unless-stopped

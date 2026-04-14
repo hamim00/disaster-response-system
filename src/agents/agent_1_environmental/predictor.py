@@ -310,6 +310,41 @@ class FloodRiskPredictor:
         
         return min(factor, 1.0), True
     
+    def calculate_river_discharge_factor(
+        self, river_data: Optional[Dict[str, Any]]
+    ) -> tuple:
+        """
+        Calculate river discharge risk factor from GloFAS percentile data.
+        
+        Uses percentile_rank (0-100) mapped to 0-1 risk score.
+        Rising trend adds a bonus.
+        
+        Returns:
+            (factor: float 0-1, has_data: bool)
+        """
+        if not river_data:
+            return 0.0, False
+        
+        pct = river_data.get('percentile_rank', 0.0)
+        
+        # Map percentile to risk score
+        if pct >= 95:
+            base = 1.0
+        elif pct >= 90:
+            base = 0.8
+        elif pct >= 75:
+            base = 0.5
+        elif pct >= 50:
+            base = 0.25
+        else:
+            base = pct / 100.0 * 0.25  # Linear 0-0.25 for below median
+        
+        # Rising trend bonus
+        if river_data.get('trend') == 'RISING' and river_data.get('days_rising', 0) >= 3:
+            base = min(base + 0.1, 1.0)
+        
+        return base, True
+    
     def calculate_drainage_factor(self, zone: SentinelZone) -> float:
         """
         Calculate drainage capacity factor (1=poor, 0=excellent).
@@ -373,7 +408,8 @@ class FloodRiskPredictor:
         social_analysis: Dict[str, Any],
         historical_risk: float,
         satellite_data: Optional[Dict[str, Any]] = None,
-        depth_data: Optional[Dict[str, Any]] = None
+        depth_data: Optional[Dict[str, Any]] = None,
+        river_data: Optional[Dict[str, Any]] = None
     ) -> FloodRiskFactors:
         """
         Calculate all 8 risk factors and return a FloodRiskFactors object
@@ -465,6 +501,17 @@ class FloodRiskPredictor:
         drainage = self.calculate_drainage_factor(zone)
         elevation = self.calculate_elevation_factor(zone)
         
+        # River discharge factor (GloFAS)
+        river_factor, has_river = self.calculate_river_discharge_factor(river_data)
+        if has_river:
+            logger.info(
+                f"  River factor: {river_factor:.3f} "
+                f"(p{river_data.get('percentile_rank', 0):.0f}, "
+                f"{river_data.get('trend', 'STABLE')})"
+            )
+        else:
+            logger.debug("  River discharge data: not available — weight redistributed")
+        
         return FloodRiskFactors(
             # Weather
             rainfall_intensity=rainfall,
@@ -479,9 +526,12 @@ class FloodRiskPredictor:
             # Optional
             social_reports_density=social_factor,
             historical_risk=historical_risk,
+            # River discharge
+            river_discharge_factor=river_factor,
             # Metadata for dynamic weighting
             has_satellite_data=has_satellite,
             has_social_data=has_social,
+            has_river_data=has_river,
             satellite_confirmed_flooding=satellite_confirmed,
         )
     
@@ -752,24 +802,11 @@ class FloodRiskPredictor:
         spatial_analysis: SpatialAnalysisResult,
         historical_risk: float,
         satellite_data: Optional[Dict[str, Any]] = None,
-        depth_data: Optional[Dict[str, Any]] = None
+        depth_data: Optional[Dict[str, Any]] = None,
+        river_data: Optional[Dict[str, Any]] = None
     ) -> FloodPrediction:
         """
-        Generate comprehensive flood risk prediction using 8-factor model.
-        
-        Args:
-            zone: Sentinel zone
-            weather_data: Raw weather data (can be None)
-            normalized_weather: Normalized weather metrics (can be None)
-            social_analysis: Social media analysis (can be empty {})
-            spatial_analysis: Spatial analysis results
-            historical_risk: Historical risk score
-            satellite_data: Dict with satellite_risk, satellite_flood_pct,
-                           satellite_flood_area_km2. None if unavailable.
-            depth_data: Dict from DepthPredictor.analyze(). None if unavailable.
-            
-        Returns:
-            Complete flood prediction
+        Generate comprehensive flood risk prediction using multi-factor model.
         """
         logger.info(f"Generating prediction for zone: {zone.name}")
         
@@ -780,7 +817,8 @@ class FloodRiskPredictor:
             social_analysis=social_analysis,
             historical_risk=historical_risk,
             satellite_data=satellite_data,
-            depth_data=depth_data
+            depth_data=depth_data,
+            river_data=river_data
         )
         
         # --- Step 2: Get overall risk score (dynamic weighting in model) ---
@@ -1160,7 +1198,10 @@ class PredictionOrchestrator:
             critical_infrastructure_at_risk=[]
         )
         
-        # --- Generate prediction using 8-factor model ---
+        # --- Extract river discharge data (if main.py attached it) ---
+        river_data = processed_data.get('river_discharge', None)
+        
+        # --- Generate prediction using multi-factor model ---
         prediction = self.predictor.predict_flood_risk(
             zone=zone,
             weather_data=weather,
@@ -1169,7 +1210,8 @@ class PredictionOrchestrator:
             spatial_analysis=spatial_analysis,
             historical_risk=historical_risk,
             satellite_data=satellite_data,
-            depth_data=depth_data
+            depth_data=depth_data,
+            river_data=river_data
         )
         
         # Generate alert if severity warrants it

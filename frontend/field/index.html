@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>FloodShield — Field Team Portal</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --white: #f0f6fc;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --amber: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+  }
+
+  /* ---------- LOGIN SCREEN ---------- */
+  .login-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 40px 24px;
+  }
+  .login-logo { font-size: 28px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+  .login-subtitle { font-size: 14px; color: var(--text-dim); margin-bottom: 32px; }
+  .login-form { width: 100%; max-width: 320px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block; font-size: 12px; font-weight: 600; color: var(--text-dim);
+    margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .form-group select, .form-group input, .form-group textarea {
+    width: 100%; padding: 10px 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 14px;
+  }
+  .form-group select:focus, .form-group input:focus, .form-group textarea:focus {
+    outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(88,166,255,0.15);
+  }
+  .btn-primary {
+    width: 100%; padding: 12px; background: var(--blue); border: none;
+    border-radius: 6px; color: #fff; font-family: inherit; font-size: 15px;
+    font-weight: 600; cursor: pointer; transition: background 0.15s;
+  }
+  .btn-primary:hover { background: #79c0ff; }
+
+  /* ---------- MAIN DASHBOARD ---------- */
+  .dashboard { display: none; flex-direction: column; min-height: 100vh; }
+  .dash-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .team-badge { display: flex; align-items: center; gap: 8px; }
+  .team-status-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .status-standby { background: var(--green); }
+  .status-dispatched { background: var(--blue); }
+  .status-en_route { background: var(--blue); }
+  .status-on_site { background: var(--amber); }
+  .status-returning { background: var(--purple); }
+  .team-name { font-weight: 700; font-size: 14px; color: var(--white); }
+  .team-status-text { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .header-right { display: flex; align-items: center; gap: 8px; }
+
+  .btn-logout {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    padding: 6px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: inherit;
+  }
+
+  /* Notification queue badge button */
+  .btn-queue {
+    position: relative; background: none; border: 1px solid var(--border);
+    color: var(--text-dim); padding: 6px 10px; border-radius: 4px;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .btn-queue .badge {
+    position: absolute; top: -6px; right: -6px;
+    background: var(--red); color: #fff; font-size: 10px; font-weight: 700;
+    min-width: 18px; height: 18px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+  }
+  .btn-queue .badge.hidden { display: none; }
+
+  /* Mini map */
+  .mini-map { height: 180px; border-bottom: 1px solid var(--border); }
+  #field-map { width: 100%; height: 100%; }
+
+  /* Mission card */
+  .mission-card {
+    margin: 12px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .mission-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+  }
+  .mission-title { font-weight: 700; font-size: 14px; color: var(--white); }
+  .priority-badge {
+    padding: 2px 8px; border-radius: 4px; font-size: 10px;
+    font-weight: 700; text-transform: uppercase;
+  }
+  .priority-critical { background: rgba(248,81,73,0.15); color: var(--red); }
+  .priority-high { background: rgba(210,153,34,0.15); color: var(--amber); }
+  .priority-medium { background: rgba(210,153,34,0.15); color: var(--amber); }
+  .priority-low { background: rgba(63,185,80,0.15); color: var(--green); }
+
+  .mission-body { padding: 14px; }
+  .mission-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+  .mission-label { color: var(--text-dim); }
+  .mission-value { font-weight: 600; }
+
+  .resources-list { margin-top: 10px; }
+  .resource-item {
+    display: flex; justify-content: space-between; padding: 4px 0;
+    font-size: 12px; border-bottom: 1px solid var(--border);
+  }
+
+  /* Action buttons */
+  .actions { display: flex; gap: 8px; padding: 12px 16px; }
+  .btn-action {
+    flex: 1; padding: 12px; border: none; border-radius: 6px;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn-accept { background: var(--green); color: #000; }
+  .btn-decline { background: var(--surface2); color: var(--red); border: 1px solid var(--border); }
+  .btn-arrived { background: var(--blue); color: #fff; }
+  .btn-complete { background: var(--purple); color: #fff; }
+  .btn-report { background: var(--surface); color: var(--amber); border: 1px solid var(--border); }
+
+  /* Report form overlay */
+  .overlay {
+    display: none; position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; background: rgba(0,0,0,0.85);
+    z-index: 100; overflow-y: auto; padding: 24px 16px;
+  }
+  .overlay-content {
+    max-width: 440px; margin: 0 auto; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+  }
+  .overlay-title { font-size: 18px; font-weight: 700; color: var(--white); margin-bottom: 16px; }
+  .radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .radio-option {
+    padding: 6px 12px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .radio-option.selected { border-color: var(--blue); background: rgba(88,166,255,0.1); color: var(--blue); }
+  .btn-close {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 20px; cursor: pointer; position: absolute; top: 12px; right: 16px;
+  }
+
+  /* Notification toast */
+  .notification {
+    display: none; position: fixed; top: 0; left: 0; right: 0;
+    background: var(--red); color: #fff; padding: 14px 16px;
+    font-weight: 600; font-size: 14px; z-index: 200;
+    animation: slideDown 0.3s; text-align: center;
+  }
+  @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
+  /* Dispatch modal — only shown when NO active mission */
+  .dispatch-modal {
+    display: none; position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; background: rgba(0,0,0,0.9);
+    z-index: 150; padding: 30px 16px; overflow-y: auto;
+  }
+  .dispatch-content {
+    max-width: 400px; margin: 0 auto; background: var(--surface);
+    border: 2px solid var(--red); border-radius: 10px;
+    padding: 20px; animation: slideDown 0.4s;
+  }
+  .dispatch-alert {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 2px;
+    color: var(--red); font-weight: 700; margin-bottom: 12px; text-align: center;
+  }
+
+  /* No mission placeholder */
+  .no-mission { text-align: center; padding: 40px 20px; color: var(--text-dim); }
+  .no-mission-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* ===== NOTIFICATION QUEUE PANEL (slide-in) ===== */
+  .queue-panel {
+    display: none; position: fixed; top: 0; right: 0;
+    width: 100%; max-width: 400px; height: 100%;
+    background: var(--bg); z-index: 180;
+    border-left: 1px solid var(--border);
+    flex-direction: column; animation: slideRight 0.25s;
+  }
+  .queue-panel.open { display: flex; }
+  @keyframes slideRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+  .queue-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .queue-header h3 { font-size: 15px; color: var(--white); }
+  .queue-close {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 20px; cursor: pointer;
+  }
+  .queue-body {
+    flex: 1; overflow-y: auto; padding: 12px;
+  }
+  .queue-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; margin-bottom: 10px;
+    cursor: pointer; transition: border-color 0.15s;
+  }
+  .queue-item:hover { border-color: var(--blue); }
+  .queue-item .qi-zone { font-weight: 700; font-size: 14px; color: var(--white); }
+  .queue-item .qi-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .queue-item .qi-priority {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+  }
+  .queue-item .qi-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .queue-item .qi-btn {
+    flex: 1; padding: 8px; border: none; border-radius: 4px;
+    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .qi-btn-accept { background: var(--green); color: #000; }
+  .qi-btn-dismiss { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .queue-empty {
+    text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px;
+  }
+
+  /* Backdrop for queue panel */
+  .queue-backdrop {
+    display: none; position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+    z-index: 170;
+  }
+  .queue-backdrop.open { display: block; }
+
+  /* Step progress bar for active mission */
+  .mission-steps {
+    display: flex; align-items: center; padding: 12px 16px;
+    gap: 4px;
+  }
+  .step {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .step-dot {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid var(--border); display: flex;
+    align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: var(--text-dim);
+    transition: all 0.3s;
+  }
+  .step-dot.active { border-color: var(--blue); background: var(--blue); color: #fff; }
+  .step-dot.done { border-color: var(--green); background: var(--green); color: #000; }
+  .step-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+  .step-label.active { color: var(--blue); font-weight: 600; }
+  .step-label.done { color: var(--green); }
+  .step-line { width: 100%; height: 2px; background: var(--border); flex: 0.5; margin-top: -14px; }
+  .step-line.done { background: var(--green); }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-logo">🛡️ FloodShield BD</div>
+  <div class="login-subtitle">Field Team Portal</div>
+  <div class="login-form">
+    <div class="form-group">
+      <label>Select Team</label>
+      <select id="teamSelect">
+        <option value="team_alpha">Team Alpha - Sylhet</option>
+        <option value="team_bravo">Team Bravo - Sunamganj</option>
+        <option value="team_charlie">Team Charlie - Dhaka</option>
+        <option value="team_delta">Team Delta - Sirajganj</option>
+        <option value="team_echo">Team Echo - Companiganj</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>PIN</label>
+      <input type="password" id="pinInput" value="1234" placeholder="Enter PIN">
+    </div>
+    <button class="btn-primary" onclick="login()">Login</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="dashboard" id="dashboard">
+  <div class="dash-header">
+    <div class="team-badge">
+      <div class="team-status-dot status-standby" id="statusDot"></div>
+      <div>
+        <div class="team-name" id="teamNameDisplay">Team Alpha</div>
+        <div class="team-status-text" id="teamStatusDisplay">STANDBY</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn-queue" id="btnQueue" onclick="toggleQueuePanel()">
+        📋 <span class="badge hidden" id="queueBadge">0</span>
+      </button>
+      <button class="btn-logout" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="mini-map"><div id="field-map"></div></div>
+
+  <!-- Mission step progress -->
+  <div id="missionSteps" style="display:none">
+    <div class="mission-steps">
+      <div class="step"><div class="step-dot" id="stepAccepted">1</div><div class="step-label" id="stepLabelAccepted">Accepted</div></div>
+      <div class="step-line" id="stepLine1"></div>
+      <div class="step"><div class="step-dot" id="stepEnRoute">2</div><div class="step-label" id="stepLabelEnRoute">En Route</div></div>
+      <div class="step-line" id="stepLine2"></div>
+      <div class="step"><div class="step-dot" id="stepOnSite">3</div><div class="step-label" id="stepLabelOnSite">On Site</div></div>
+      <div class="step-line" id="stepLine3"></div>
+      <div class="step"><div class="step-dot" id="stepComplete">4</div><div class="step-label" id="stepLabelComplete">Complete</div></div>
+    </div>
+  </div>
+
+  <!-- Current mission or no-mission -->
+  <div id="missionArea">
+    <div class="no-mission">
+      <div class="no-mission-icon">📡</div>
+      <div>Awaiting dispatch…</div>
+      <div style="font-size:12px;margin-top:8px">You'll be notified when a mission is assigned</div>
+    </div>
+  </div>
+
+  <!-- Actions: en_route state -->
+  <div class="actions" id="actionsArea" style="display:none">
+    <button class="btn-action btn-arrived" onclick="updateStatus('on_site')">📍 Arrived on Site</button>
+    <button class="btn-action btn-report" onclick="openReportForm()">📋 Ground Report</button>
+  </div>
+  <!-- Actions: on_site state -->
+  <div class="actions" id="completeActions" style="display:none">
+    <button class="btn-action btn-complete" onclick="completeMission()">✓ Mission Complete</button>
+    <button class="btn-action btn-report" onclick="openReportForm()">📋 Report</button>
+  </div>
+</div>
+
+<!-- Dispatch notification modal (only shows when no active mission) -->
+<div class="dispatch-modal" id="dispatchModal">
+  <div class="dispatch-content">
+    <div class="dispatch-alert">🚨 NEW DISPATCH ORDER</div>
+    <div class="mission-card" style="margin:0;border:none">
+      <div class="mission-body" id="dispatchDetails"></div>
+    </div>
+    <div class="actions" style="padding:12px 0 0 0">
+      <button class="btn-action btn-accept" onclick="acceptFromModal()">✓ Accept</button>
+      <button class="btn-action btn-decline" onclick="dismissFromModal()">✗ Decline</button>
+    </div>
+  </div>
+</div>
+
+<!-- Queue Panel (slide-in from right) -->
+<div class="queue-backdrop" id="queueBackdrop" onclick="toggleQueuePanel()"></div>
+<div class="queue-panel" id="queuePanel">
+  <div class="queue-header">
+    <h3>📋 Pending Dispatches</h3>
+    <button class="queue-close" onclick="toggleQueuePanel()">✕</button>
+  </div>
+  <div class="queue-body" id="queueBody">
+    <div class="queue-empty">No pending dispatches</div>
+  </div>
+</div>
+
+<!-- Ground Report overlay -->
+<div class="overlay" id="reportOverlay">
+  <div class="overlay-content" style="position:relative">
+    <button class="btn-close" onclick="closeReport()">×</button>
+    <div class="overlay-title">📋 Ground Report</div>
+    <div class="form-group">
+      <label>Actual Affected Count</label>
+      <input type="number" id="repAffected" placeholder="e.g. 120">
+    </div>
+    <div class="form-group">
+      <label>Area Accessibility</label>
+      <div class="radio-group" id="repAccess">
+        <div class="radio-option" data-val="accessible">Accessible</div>
+        <div class="radio-option" data-val="partially_blocked">Partially Blocked</div>
+        <div class="radio-option" data-val="boat_only">Boat Only</div>
+        <div class="radio-option" data-val="fully_blocked">Fully Blocked</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Water Level</label>
+      <div class="radio-group" id="repWater">
+        <div class="radio-option" data-val="rising">Rising</div>
+        <div class="radio-option" data-val="stable">Stable</div>
+        <div class="radio-option" data-val="receding">Receding</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Additional Needs</label>
+      <textarea id="repNeeds" rows="2" placeholder="e.g. Need 5 more medical kits urgently"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Route Conditions</label>
+      <textarea id="repRoute" rows="2" placeholder="e.g. Road submerged after KM 12"></textarea>
+    </div>
+    <button class="btn-primary" onclick="submitReport()" style="margin-top:8px">Submit Report</button>
+  </div>
+</div>
+
+<!-- Notification toast -->
+<div class="notification" id="notifToast">🚨 New Dispatch Order!</div>
+
+<script>
+const API = location.origin;
+let currentTeam = null;
+let currentMission = null;   // The ONE active mission being worked on
+let ws = null;
+let map = null;
+let teamMarker = null;
+let destMarker = null;
+
+// ===== NOTIFICATION QUEUE =====
+// All incoming dispatches go here first.
+// Only one can be "active" at a time.
+let notificationQueue = [];
+let currentModalDispatch = null; // The dispatch currently shown in the modal
+
+// Radio group logic
+document.querySelectorAll('.radio-group').forEach(group => {
+    group.querySelectorAll('.radio-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+            group.querySelectorAll('.radio-option').forEach(o => o.classList.remove('selected'));
+            opt.classList.add('selected');
+        });
+    });
+});
+
+// ------- AUTH -------
+async function login() {
+    const teamId = document.getElementById('teamSelect').value;
+    const pin = document.getElementById('pinInput').value;
+    try {
+        const r = await fetch(`${API}/api/field/auth/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({team_id: teamId, pin: pin})
+        });
+        if (!r.ok) { alert('Login failed'); return; }
+        currentTeam = await r.json();
+        showDashboard();
+    } catch(e) { alert('Connection error'); }
+}
+
+function logout() {
+    if (ws) ws.close();
+    currentTeam = null;
+    currentMission = null;
+    notificationQueue = [];
+    currentModalDispatch = null;
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+}
+
+function showDashboard() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'flex';
+    document.getElementById('teamNameDisplay').textContent = currentTeam.team_name;
+    updateStatusUI(currentTeam.status || 'standby');
+    initFieldMap();
+    connectFieldWS();
+    if (currentTeam.status === 'dispatched' || currentTeam.status === 'en_route' || currentTeam.status === 'on_site') {
+        checkActiveMission();
+    }
+}
+
+// Check for active mission on login
+async function checkActiveMission() {
+    try {
+        const r = await fetch(`${API}/api/field/team/${currentTeam.team_id}/mission`);
+        if (r.ok) {
+            const mission = await r.json();
+            if (mission && mission.dispatch_id) {
+                currentMission = mission;
+                showMissionCard(mission);
+                updateMissionSteps(currentTeam.status || 'en_route');
+            }
+        }
+    } catch(e) { console.log('No active mission found'); }
+}
+
+// ------- MAP -------
+function initFieldMap() {
+    if (map) map.remove();
+    map = L.map('field-map', {zoomControl: false}).setView([25.0, 91.4], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OSM'
+    }).addTo(map);
+}
+
+// ------- WebSocket -------
+function connectFieldWS() {
+    if (!currentTeam || !currentTeam.team_id) {
+        console.warn('Field WS skipped: currentTeam/team_id not ready');
+        return;
+    }
+
+    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws/field/${currentTeam.team_id}`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+        console.log('Field WS connected for team:', currentTeam.team_id);
+    };
+
+    ws.onclose = () => {
+        console.log('Field WS disconnected — reconnecting in 3s');
+        if (currentTeam && currentTeam.team_id) {
+            setTimeout(connectFieldWS, 3000);
+        }
+    };
+
+    ws.onerror = (e) => { console.error('Field WS error:', e); };
+
+    ws.onmessage = (e) => {
+        console.log('Field WS raw message:', e.data);
+        try {
+            const msg = JSON.parse(e.data);
+            console.log('Field WS parsed:', msg.type, msg);
+            if (msg.type === 'new_dispatch') {
+                console.log('>>> DISPATCH RECEIVED! Queuing...');
+                handleIncomingDispatch(msg.data);
+            }
+        } catch(err) {
+            console.error('Field WS parse error:', err);
+        }
+    };
+}
+
+// ===== NOTIFICATION QUEUE LOGIC =====
+
+function handleIncomingDispatch(data) {
+    if (!data) return;
+
+    // Deduplicate by dispatch_id
+    const exists = notificationQueue.some(n => n.dispatch_id === data.dispatch_id);
+    if (exists) return;
+    if (currentMission && currentMission.dispatch_id === data.dispatch_id) return;
+    if (currentModalDispatch && currentModalDispatch.dispatch_id === data.dispatch_id) return;
+
+    // Show toast
+    showToast(`🚨 New dispatch: ${data.destination_name || 'Unknown zone'}`);
+
+    // If NO active mission and NO modal currently showing → show modal immediately
+    if (!currentMission && !currentModalDispatch) {
+        showDispatchModal(data);
+    } else {
+        // Queue it
+        notificationQueue.push(data);
+        updateQueueBadge();
+        renderQueuePanel();
+    }
+}
+
+function showToast(text) {
+    const toast = document.getElementById('notifToast');
+    toast.textContent = text;
+    toast.style.display = 'block';
+    setTimeout(() => toast.style.display = 'none', 3000);
+}
+
+function updateQueueBadge() {
+    const badge = document.getElementById('queueBadge');
+    const count = notificationQueue.length;
+    badge.textContent = count;
+    if (count > 0) {
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+function toggleQueuePanel() {
+    const panel = document.getElementById('queuePanel');
+    const backdrop = document.getElementById('queueBackdrop');
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+        panel.classList.remove('open');
+        backdrop.classList.remove('open');
+    } else {
+        panel.classList.add('open');
+        backdrop.classList.add('open');
+        renderQueuePanel();
+    }
+}
+
+function renderQueuePanel() {
+    const body = document.getElementById('queueBody');
+    if (!notificationQueue.length) {
+        body.innerHTML = '<div class="queue-empty">No pending dispatches</div>';
+        return;
+    }
+
+    body.innerHTML = notificationQueue.map((d, idx) => {
+        const prioLabel = d.priority_label || 'HIGH';
+        const prioClass = prioLabel.toLowerCase() === 'critical' ? 'priority-critical' :
+                          prioLabel.toLowerCase() === 'high' ? 'priority-high' : 'priority-medium';
+        return `
+            <div class="queue-item">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span class="qi-zone">${d.destination_name || 'Unknown'}</span>
+                    <span class="qi-priority ${prioClass}">${prioLabel}</span>
+                </div>
+                <div class="qi-meta">
+                    Dispatch #${d.dispatch_id || '?'} · ${d.estimated_affected || '?'} affected · ETA ${d.estimated_travel_time_min || '?'} min
+                </div>
+                <div class="qi-actions">
+                    <button class="qi-btn qi-btn-accept" onclick="acceptFromQueue(${idx})">✓ Accept</button>
+                    <button class="qi-btn qi-btn-dismiss" onclick="dismissFromQueue(${idx})">✗ Dismiss</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Accept from the modal popup
+function acceptFromModal() {
+    if (!currentModalDispatch) return;
+    respondDispatch(currentModalDispatch, 'accepted');
+}
+
+// Dismiss from the modal popup
+function dismissFromModal() {
+    if (!currentModalDispatch) return;
+    respondDispatch(currentModalDispatch, 'declined');
+}
+
+// Accept from the queue panel
+function acceptFromQueue(idx) {
+    if (currentMission) {
+        showToast('⚠️ Complete your current mission first');
+        return;
+    }
+    const dispatch = notificationQueue.splice(idx, 1)[0];
+    updateQueueBadge();
+    renderQueuePanel();
+    respondDispatch(dispatch, 'accepted');
+}
+
+// Dismiss from the queue panel
+function dismissFromQueue(idx) {
+    const dispatch = notificationQueue.splice(idx, 1)[0];
+    updateQueueBadge();
+    renderQueuePanel();
+    respondDispatch(dispatch, 'declined');
+}
+
+// ===== DISPATCH MODAL (only shows when idle) =====
+
+function showDispatchModal(data) {
+    if (!data) return;
+    currentModalDispatch = data;
+
+    const details = document.getElementById('dispatchDetails');
+    details.innerHTML = `
+        <div class="mission-row"><span class="mission-label">Mission</span><span class="mission-value">#${data.dispatch_id || '?'}</span></div>
+        <div class="mission-row"><span class="mission-label">Location</span><span class="mission-value" style="font-family:'Noto Sans Bengali',sans-serif">${data.destination_name || 'Unknown'}</span></div>
+        <div class="mission-row"><span class="mission-label">Priority</span><span class="mission-value" style="color:var(--red)">${data.priority_label || 'HIGH'}</span></div>
+        <div class="mission-row"><span class="mission-label">Est. Affected</span><span class="mission-value">${data.estimated_affected || '?'} people</span></div>
+        <div class="mission-row"><span class="mission-label">Distance</span><span class="mission-value">${data.estimated_travel_time_min || '?'} min</span></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-dim)">
+            <strong>Resources:</strong><br>
+            ${(data.resources_assigned || []).map(r => `${r.type}: ${r.quantity}`).join('<br>')}
+        </div>
+        ${data.route_notes ? `<div style="margin-top:8px;font-size:12px;color:var(--amber)">Route: ${data.route_notes}</div>` : ''}
+    `;
+    document.getElementById('dispatchModal').style.display = 'block';
+}
+
+async function respondDispatch(dispatch, response) {
+    if (!dispatch || !currentTeam) return;
+    try {
+        await fetch(`${API}/api/field/mission/${dispatch.dispatch_id || 0}/respond`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                dispatch_id: dispatch.dispatch_id || 0,
+                team_id: currentTeam.team_id,
+                response: response,
+            })
+        });
+    } catch(e) { console.error(e); }
+
+    // Close modal if it was showing this dispatch
+    if (currentModalDispatch && currentModalDispatch.dispatch_id === dispatch.dispatch_id) {
+        document.getElementById('dispatchModal').style.display = 'none';
+        currentModalDispatch = null;
+    }
+
+    if (response === 'accepted') {
+        currentMission = dispatch;
+        updateStatusUI('en_route');
+        showMissionCard(dispatch);
+        updateMissionSteps('en_route');
+
+        // Close queue panel if open
+        document.getElementById('queuePanel').classList.remove('open');
+        document.getElementById('queueBackdrop').classList.remove('open');
+    } else {
+        // Declined — try showing next queued dispatch if idle
+        if (!currentMission) {
+            showNextQueuedDispatch();
+        }
+    }
+}
+
+function showNextQueuedDispatch() {
+    if (notificationQueue.length > 0 && !currentMission) {
+        const next = notificationQueue.shift();
+        updateQueueBadge();
+        renderQueuePanel();
+        showDispatchModal(next);
+    }
+}
+
+// ===== MISSION CARD & WORKFLOW =====
+
+function getPriorityLabel(data) {
+    return String(data?.priority_label || 'HIGH').toUpperCase();
+}
+
+function getPriorityClass(data) {
+    const label = String(data?.priority_label || 'HIGH').toLowerCase();
+    if (label === 'critical') return 'critical';
+    if (label === 'high') return 'high';
+    if (label === 'medium') return 'medium';
+    if (label === 'low') return 'low';
+    return 'high';
+}
+
+function showMissionCard(data) {
+    if (!data) return;
+
+    const area = document.getElementById('missionArea');
+    const priorityLabel = getPriorityLabel(data);
+    const priorityClass = getPriorityClass(data);
+
+    area.innerHTML = `
+        <div class="mission-card">
+            <div class="mission-header">
+                <span class="mission-title">Mission #${data.dispatch_id || '?'}</span>
+                <span class="priority-badge priority-${priorityClass}">${priorityLabel}</span>
+            </div>
+            <div class="mission-body">
+                <div class="mission-row"><span class="mission-label">Destination</span><span class="mission-value">${data.destination_name || 'Unknown'}</span></div>
+                <div class="mission-row"><span class="mission-label">Est. Affected</span><span class="mission-value">${data.estimated_affected || '?'}</span></div>
+                <div class="resources-list">
+                    ${(data.resources_assigned || []).map(r => `
+                        <div class="resource-item"><span>${r.type}</span><span>${r.quantity}</span></div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('missionSteps').style.display = 'block';
+    document.getElementById('actionsArea').style.display = 'flex';
+    document.getElementById('completeActions').style.display = 'none';
+
+    if (destMarker) {
+        map.removeLayer(destMarker);
+        destMarker = null;
+    }
+
+    if (data.destination) {
+        destMarker = L.marker([data.destination.lat, data.destination.lng], {
+            icon: L.divIcon({className:'', html:'<div style="background:var(--red);width:12px;height:12px;border-radius:50%;border:2px solid #fff"></div>'})
+        }).addTo(map);
+        map.setView([data.destination.lat, data.destination.lng], 12);
+    }
+}
+
+function updateMissionSteps(status) {
+    const steps = ['accepted', 'en_route', 'on_site', 'complete'];
+    const stepIds = ['stepAccepted', 'stepEnRoute', 'stepOnSite', 'stepComplete'];
+    const labelIds = ['stepLabelAccepted', 'stepLabelEnRoute', 'stepLabelOnSite', 'stepLabelComplete'];
+    const lineIds = ['stepLine1', 'stepLine2', 'stepLine3'];
+
+    // Map status to step index
+    let activeIdx = 0;
+    if (status === 'en_route') activeIdx = 1;
+    else if (status === 'on_site') activeIdx = 2;
+    else if (status === 'returning' || status === 'complete') activeIdx = 3;
+
+    stepIds.forEach((id, i) => {
+        const el = document.getElementById(id);
+        const lbl = document.getElementById(labelIds[i]);
+        el.className = 'step-dot';
+        lbl.className = 'step-label';
+        if (i < activeIdx) {
+            el.classList.add('done');
+            lbl.classList.add('done');
+            el.textContent = '✓';
+        } else if (i === activeIdx) {
+            el.classList.add('active');
+            lbl.classList.add('active');
+            el.textContent = i + 1;
+        } else {
+            el.textContent = i + 1;
+        }
+    });
+
+    lineIds.forEach((id, i) => {
+        const el = document.getElementById(id);
+        el.className = 'step-line';
+        if (i < activeIdx) el.classList.add('done');
+    });
+}
+
+async function updateStatus(newStatus) {
+    if (!currentTeam) return;
+
+    try {
+        await fetch(`${API}/api/field/team/${currentTeam.team_id}/status`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: newStatus})
+        });
+    } catch(e) { console.error(e); }
+
+    updateStatusUI(newStatus);
+    updateMissionSteps(newStatus);
+
+    if (newStatus === 'on_site') {
+        document.getElementById('actionsArea').style.display = 'none';
+        document.getElementById('completeActions').style.display = 'flex';
+    }
+}
+
+function updateStatusUI(status) {
+    const dot = document.getElementById('statusDot');
+    dot.className = 'team-status-dot status-' + status;
+    document.getElementById('teamStatusDisplay').textContent = status.replace(/_/g, ' ').toUpperCase();
+}
+
+async function completeMission() {
+    await updateStatus('returning');
+    document.getElementById('completeActions').style.display = 'none';
+
+    setTimeout(async () => {
+        await updateStatus('standby');
+        currentMission = null;
+        document.getElementById('missionSteps').style.display = 'none';
+        document.getElementById('actionsArea').style.display = 'none';
+
+        // Check if there are queued dispatches
+        if (notificationQueue.length > 0) {
+            document.getElementById('missionArea').innerHTML = `
+                <div class="no-mission">
+                    <div class="no-mission-icon">✅</div>
+                    <div>Mission completed!</div>
+                    <div style="font-size:12px;margin-top:8px;color:var(--amber)">
+                        You have ${notificationQueue.length} pending dispatch(es).
+                        <br>
+                        <button class="btn-primary" style="width:auto;padding:8px 20px;margin-top:10px;font-size:13px" onclick="toggleQueuePanel()">
+                            View Pending Dispatches
+                        </button>
+                    </div>
+                </div>
+            `;
+            // Also auto-show next dispatch modal
+            showNextQueuedDispatch();
+        } else {
+            document.getElementById('missionArea').innerHTML = `
+                <div class="no-mission">
+                    <div class="no-mission-icon">✅</div>
+                    <div>Mission completed</div>
+                    <div style="font-size:12px;margin-top:8px">Awaiting next dispatch…</div>
+                </div>
+            `;
+        }
+    }, 2000);
+}
+
+// ------- GROUND REPORT -------
+function openReportForm() { document.getElementById('reportOverlay').style.display = 'block'; }
+function closeReport() { document.getElementById('reportOverlay').style.display = 'none'; }
+
+async function submitReport() {
+    const missionId = currentMission?.dispatch_id || 0;
+    const access = document.querySelector('#repAccess .selected')?.dataset.val || null;
+    const water = document.querySelector('#repWater .selected')?.dataset.val || null;
+
+    try {
+        await fetch(`${API}/api/field/mission/${missionId}/report`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                mission_id: missionId,
+                actual_affected_count: parseInt(document.getElementById('repAffected').value) || null,
+                area_accessibility: access,
+                water_level_observation: water,
+                additional_needs: document.getElementById('repNeeds').value || null,
+                route_conditions: document.getElementById('repRoute').value || null,
+            })
+        });
+        closeReport();
+        showToast('✅ Report submitted successfully');
+    } catch(e) { showToast('❌ Failed to submit report'); }
+}
+
+// GPS heartbeat simulation (every 10s)
+setInterval(() => {
+    if (!currentTeam || !ws || ws.readyState !== 1) return;
+
+    const baseLat = currentTeam.team_id === 'team_alpha' ? 24.8949 :
+                    currentTeam.team_id === 'team_bravo' ? 25.0715 : 23.8103;
+    const baseLng = currentTeam.team_id === 'team_alpha' ? 91.8687 :
+                    currentTeam.team_id === 'team_bravo' ? 91.3950 : 90.4125;
+    const jitter = () => (Math.random() - 0.5) * 0.01;
+
+    ws.send(JSON.stringify({
+        type: 'heartbeat',
+        lat: baseLat + jitter(),
+        lng: baseLng + jitter(),
+        timestamp: new Date().toISOString(),
+    }));
+}, 10000);
+</script>
+</body>
+</html>

@@ -364,6 +364,109 @@ class DistressIntelligenceAgent:
         
         return output
     
+    async def _subscribe_intake(self):
+        """
+        Subscribe to raw_distress_intake Redis channel (published by scenario feeder).
+        Routes each incoming event into the appropriate channel for processing.
+        """
+        if not self.redis_client:
+            return
+
+        try:
+            pubsub = self.redis_client.pubsub()
+            await pubsub.subscribe("raw_distress_intake")
+            logger.info("Subscribed to raw_distress_intake channel (scenario feeder link)")
+
+            async for message in pubsub.listen():
+                if not self.running:
+                    break
+                if message["type"] != "message":
+                    continue
+                try:
+                    data = json.loads(message["data"])
+
+                    # Skip scenario-complete markers
+                    if data.get("type") == "scenario_complete":
+                        logger.info("Scenario complete marker received — triggering final processing cycle")
+                        await self.run_processing_cycle()
+                        continue
+
+                    source_type = data.get("source_type", "")
+                    event_id = data.get("event_id", "")
+                    raw_msg = data.get("raw_message", "")
+                    loc_desc = data.get("location_description", "")
+                    urgency = data.get("auto_detected_urgency", "medium")
+
+                    # Extract pinpoint location from scenario event
+                    scenario_loc = data.get("location", {})
+                    scenario_lat = scenario_loc.get("lat")
+                    scenario_lng = scenario_loc.get("lng")
+
+                    logger.info(
+                        f"Intake received: type={source_type}, event={event_id}, "
+                        f"location={loc_desc}, urgency={urgency}, "
+                        f"coords=({scenario_lat},{scenario_lng})"
+                    )
+
+                    # Route to the appropriate channel, passing scenario coords
+                    if source_type == "call_999" and self.hotline_channel:
+                        self.hotline_channel.load_simulated_calls([{
+                            "zone": loc_desc or "Unknown",
+                            "urgency": urgency,
+                            "situation": "flood_report",
+                            "people_count": data.get("people_count", 5),
+                            "water_feet": data.get("water_feet", 4),
+                            "notes": raw_msg,
+                            "scenario_lat": scenario_lat,
+                            "scenario_lng": scenario_lng,
+                            "location_description": loc_desc,
+                        }])
+
+                    elif source_type == "sms" and self.sms_channel:
+                        self.sms_channel.load_simulated_messages([{
+                            "text": raw_msg,
+                            "sender_phone": data.get("source_phone", "+880170000000"),
+                            "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                            "scenario_lat": scenario_lat,
+                            "scenario_lng": scenario_lng,
+                            "location_description": loc_desc,
+                        }])
+
+                    elif source_type == "social_media" and self.social_channel:
+                        self.social_channel.load_simulated_posts([{
+                            "id": event_id or f"sm_{int(time.time()*1000)}",
+                            "platform": "facebook",
+                            "text": raw_msg,
+                            "author": data.get("author", "citizen_bd"),
+                            "created_at": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                            "engagement": 100,
+                            "scenario_lat": scenario_lat,
+                            "scenario_lng": scenario_lng,
+                            "location_description": loc_desc,
+                        }])
+
+                    else:
+                        logger.warning(f"Unknown source_type '{source_type}' — skipping")
+                        continue
+
+                    # Immediately trigger a processing cycle so events flow through quickly
+                    await self.run_processing_cycle()
+
+                    # Publish status update so Gateway UI can show "processed"
+                    if event_id:
+                        await self.redis_client.publish("intake_status_update", json.dumps({
+                            "event_id": event_id,
+                            "status": "processed",
+                        }))
+
+                except json.JSONDecodeError:
+                    logger.warning("Invalid JSON in raw_distress_intake message")
+                except Exception as e:
+                    logger.error(f"Error processing intake message: {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"raw_distress_intake subscription error: {e}")
+
     async def start_monitoring(self):
         """Continuous monitoring loop."""
         self.running = True
@@ -372,6 +475,7 @@ class DistressIntelligenceAgent:
         # Start flood_alert subscription in background
         if self.redis_client:
             asyncio.create_task(self._subscribe_flood_alerts())
+            asyncio.create_task(self._subscribe_intake())
         
         while self.running:
             try:
@@ -547,6 +651,146 @@ async def set_flood_data(data: Dict[str, Dict[str, Any]]):
         raise HTTPException(status_code=503, detail="Agent not initialized")
     agent.cross_reference.set_flood_data(data)
     return {"message": f"Flood data set for {len(data)} zones"}
+
+
+# =====================================================================
+# SCRIPTED DEMO SCENARIO — "Bangladesh Monsoon 2024"
+# =====================================================================
+
+@app.post("/scenario/monsoon2024")
+async def run_monsoon_scenario():
+    """
+    One-button scripted demo that plays the full pipeline story:
+    1. Satellite alerts verify flood zones
+    2. SMS distress reports arrive
+    3. Social media posts flood in
+    4. 999 hotline calls come through
+    5. Processing cycle cross-references, prioritizes, allocates, dispatches
+    Returns progress events as they happen.
+    """
+    global agent
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+
+    log = []
+
+    # ── Step 0: Reset Agent 3 inventory for clean demo ──
+    try:
+        import httpx
+        agent3_url = os.getenv("AGENT3_URL", "http://agent3:8003")
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(f"{agent3_url}/inventory/reset")
+            if r.status_code == 200:
+                log.append({"step": 0, "action": "reset_inventory", "detail": r.json()})
+    except Exception as e:
+        log.append({"step": 0, "action": "reset_inventory", "detail": f"skip: {e}"})
+
+    # ── Step 1: Satellite flood alerts (verifies zones) ──
+    flood_alerts = [
+        {"zone_name": "Mirpur",       "risk_score": 0.82, "flood_pct": 35, "water_depth_m": 1.2,
+         "latitude": 23.8223, "longitude": 90.3654, "source": "sentinel_1_sar"},
+        {"zone_name": "Jatrabari",    "risk_score": 0.91, "flood_pct": 52, "water_depth_m": 1.8,
+         "latitude": 23.7104, "longitude": 90.4348, "source": "sentinel_1_sar"},
+        {"zone_name": "Demra",        "risk_score": 0.88, "flood_pct": 45, "water_depth_m": 1.5,
+         "latitude": 23.7225, "longitude": 90.4968, "source": "sentinel_1_sar"},
+        {"zone_name": "Uttara",       "risk_score": 0.65, "flood_pct": 18, "water_depth_m": 0.6,
+         "latitude": 23.8759, "longitude": 90.3795, "source": "sentinel_1_sar"},
+        {"zone_name": "Mohammadpur",  "risk_score": 0.58, "flood_pct": 12, "water_depth_m": 0.4,
+         "latitude": 23.7662, "longitude": 90.3589, "source": "sentinel_1_sar"},
+        {"zone_name": "Badda",        "risk_score": 0.72, "flood_pct": 22, "water_depth_m": 0.8,
+         "latitude": 23.7806, "longitude": 90.4261, "source": "sentinel_1_sar"},
+        {"zone_name": "Dhanmondi",    "risk_score": 0.42, "flood_pct": 8,  "water_depth_m": 0.3,
+         "latitude": 23.7461, "longitude": 90.3742, "source": "sentinel_1_sar"},
+        {"zone_name": "Sylhet",       "risk_score": 0.95, "flood_pct": 68, "water_depth_m": 2.5,
+         "latitude": 24.8949, "longitude": 91.8687, "source": "sentinel_1_sar"},
+        {"zone_name": "Sunamganj",    "risk_score": 0.93, "flood_pct": 72, "water_depth_m": 3.0,
+         "latitude": 25.0715, "longitude": 91.3950, "source": "sentinel_1_sar"},
+    ]
+    if agent.satellite_channel:
+        agent.satellite_channel.load_flood_alerts(flood_alerts)
+    # Also set cross-reference flood data so zones get VERIFIED
+    flood_data = {}
+    for a in flood_alerts:
+        flood_data[a["zone_name"].lower()] = {
+            "risk_score": a["risk_score"],
+            "flood_pct": a["flood_pct"],
+            "flood_depth_m": a["water_depth_m"],
+            "severity": "critical" if a["risk_score"] >= 0.9 else "high",
+            "verified": True,
+        }
+    agent.cross_reference.set_flood_data(flood_data)
+    log.append({"step": 1, "action": "satellite_alerts", "detail": f"{len(flood_alerts)} zones verified"})
+
+    await asyncio.sleep(0.5)
+
+    # ── Step 2: SMS distress reports ──
+    sms_messages = [
+        {"text": "FLOOD MIRPUR 4FT 6 ROOFTOP", "sender_phone": "+8801711000001", "timestamp": datetime.now(timezone.utc).isoformat()},
+        {"text": "FLOOD JATRABARI 6FT 12 TRAPPED", "sender_phone": "+8801711000002", "timestamp": datetime.now(timezone.utc).isoformat()},
+        {"text": "FLOOD DEMRA 5FT 15 EVACUATE", "sender_phone": "+8801711000003", "timestamp": datetime.now(timezone.utc).isoformat()},
+        {"text": "FLOOD SYLHET 8FT 20 ROOFTOP", "sender_phone": "+8801711000004", "timestamp": datetime.now(timezone.utc).isoformat()},
+        {"text": "FLOOD SUNAMGANJ 10FT 30 TRAPPED", "sender_phone": "+8801711000005", "timestamp": datetime.now(timezone.utc).isoformat()},
+    ]
+    if agent.sms_channel:
+        agent.sms_channel.load_simulated_messages(sms_messages)
+    log.append({"step": 2, "action": "sms_distress", "detail": f"{len(sms_messages)} SMS loaded"})
+
+    await asyncio.sleep(0.3)
+
+    # ── Step 3: Social media posts ──
+    try:
+        from SAMPLE_DATA import SOCIAL_MEDIA_POSTS
+        social_posts = SOCIAL_MEDIA_POSTS
+    except ImportError:
+        social_posts = [
+            {"id":"fb_001","platform":"facebook","text":"মিরপুর ১২ নম্বর সেক্টরে পানি উঠে গেছে! 😱","author":"Ahmed_Mirpur","created_at":"2024-09-15T14:30:00","engagement":156,"has_media":True},
+            {"id":"fb_002","platform":"facebook","text":"URGENT! 5 families stranded on rooftop in Pallabi, Mirpur! Water is chest deep! 🆘","author":"FloodWatch_BD","created_at":"2024-09-15T15:00:00","engagement":843,"has_media":True},
+            {"id":"fb_005","platform":"facebook","text":"জাত্রাবাড়ী এলাকায় ভয়াবহ বন্যা! পানি ৬ ফুট! একটা বাড়ি ভেঙে পড়েছে!","author":"jatrabari_crisis","created_at":"2024-09-15T15:30:00","engagement":2105,"has_media":True},
+            {"id":"fb_007","platform":"facebook","text":"Demra industrial area te heavy flooding. 30 workers trapped upstairs.","author":"demra_news","created_at":"2024-09-15T15:45:00","engagement":312},
+            {"id":"fb_009","platform":"facebook","text":"HELP! Badda Gulshan link road completely flooded! Rescue boat needed!","author":"badda_help","created_at":"2024-09-15T15:20:00","engagement":534,"has_media":True},
+        ]
+    if agent.social_channel:
+        agent.social_channel.load_simulated_posts(social_posts)
+    log.append({"step": 3, "action": "social_media", "detail": f"{len(social_posts)} posts loaded"})
+
+    await asyncio.sleep(0.3)
+
+    # ── Step 4: 999 hotline calls ──
+    hotline_calls = [
+        {"zone": "Mirpur",    "urgency": "critical", "situation": "stranded",
+         "people_count": 5,   "water_feet": 5, "notes": "Elderly trapped on 2nd floor, one needs insulin urgently"},
+        {"zone": "Jatrabari", "urgency": "critical", "situation": "structural_collapse",
+         "people_count": 20,  "water_feet": 6, "notes": "Building collapse near Kadamtali bridge. Multiple families trapped"},
+        {"zone": "Demra",     "urgency": "high",     "situation": "evacuation",
+         "people_count": 30,  "water_feet": 4, "notes": "Garment factory workers moved to upper floor, need evacuation"},
+    ]
+    if agent.hotline_channel:
+        agent.hotline_channel.load_simulated_calls(hotline_calls)
+    log.append({"step": 4, "action": "hotline_999", "detail": f"{len(hotline_calls)} calls loaded"})
+
+    await asyncio.sleep(0.3)
+
+    # ── Step 5: Trigger processing cycle ──
+    try:
+        output = await agent.run_processing_cycle()
+        log.append({
+            "step": 5, "action": "processing_cycle",
+            "detail": {
+                "reports_ingested": output.total_reports_ingested,
+                "queue_size": output.queue_size,
+                "verified": output.verified_reports,
+                "critical": output.critical_items,
+            },
+        })
+    except Exception as e:
+        log.append({"step": 5, "action": "processing_cycle", "detail": f"error: {e}"})
+
+    return {
+        "scenario": "Bangladesh Monsoon 2024",
+        "status": "completed",
+        "steps": log,
+        "message": "Full pipeline executed: satellite → SMS → social → hotline → process → allocate → dispatch",
+    }
 
 
 # =====================================================================

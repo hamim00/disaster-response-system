@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>FloodShield Diagnostics</title>
+<style>
+  body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
+  .test { padding: 8px 12px; margin: 4px 0; border-left: 3px solid #30363d; }
+  .pass { border-color: #3fb950; }
+  .fail { border-color: #f85149; }
+  .warn { border-color: #d29922; }
+  .info { border-color: #58a6ff; }
+  h2 { color: #58a6ff; margin-top: 20px; }
+  button { background: #238636; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-family: monospace; margin: 4px; }
+  button:hover { background: #2ea043; }
+  pre { background: #161b22; padding: 10px; border-radius: 4px; overflow-x: auto; max-height: 300px; overflow-y: auto; }
+  #log { max-height: 400px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<h1>🔍 FloodShield Connection Diagnostics</h1>
+<p>Open browser console (F12) for full details</p>
+
+<button onclick="runAll()">Run All Tests</button>
+<button onclick="testGatewayWS()">Test Gateway WS</button>
+<button onclick="testFieldWS()">Test Field WS</button>
+<button onclick="testCommandWS()">Test Command WS</button>
+<button onclick="testFeeder()">Test Feeder</button>
+<button onclick="testIntakeDB()">Test Intake DB</button>
+<button onclick="testTeams()">Test Teams DB</button>
+<button onclick="testMissionEndpoint()">Test Mission Endpoint</button>
+<button onclick="fireSingleEvent()">🔥 Fire Test Event</button>
+
+<div id="results"></div>
+<h2>Live WebSocket Log</h2>
+<div id="log"></div>
+
+<script>
+const API = 'http://localhost:8000';
+const results = document.getElementById('results');
+const logDiv = document.getElementById('log');
+
+function addResult(name, status, detail) {
+    const cls = status === 'PASS' ? 'pass' : status === 'FAIL' ? 'fail' : status === 'WARN' ? 'warn' : 'info';
+    results.innerHTML += `<div class="test ${cls}"><strong>[${status}]</strong> ${name}: ${detail}</div>`;
+}
+
+function addLog(msg) {
+    const t = new Date().toLocaleTimeString();
+    logDiv.innerHTML = `<div class="test info">${t} — ${msg}</div>` + logDiv.innerHTML;
+}
+
+async function fetchTest(url, name, timeout=5000) {
+    try {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        const r = await fetch(url, { signal: controller.signal });
+        clearTimeout(id);
+        const data = await r.json();
+        addResult(name, 'PASS', `${r.status} — ${JSON.stringify(data).substring(0, 200)}`);
+        return data;
+    } catch(e) {
+        addResult(name, 'FAIL', e.message);
+        return null;
+    }
+}
+
+// ── Test 1: Backend health ──
+async function testBackendHealth() {
+    await fetchTest(`${API}/health`, 'Backend Health');
+}
+
+// ── Test 2: Feeder status ──
+async function testFeeder() {
+    await fetchTest(`${API}/api/gateway/scenario/status`, 'Feeder Status');
+}
+
+// ── Test 3: Intake DB (tests if intake_log table exists) ──
+async function testIntakeDB() {
+    await fetchTest(`${API}/api/gateway/intake/stats`, 'Intake Stats (DB)');
+    await fetchTest(`${API}/api/gateway/intake?limit=5`, 'Intake Recent (DB)');
+}
+
+// ── Test 4: Teams DB ──
+async function testTeams() {
+    await fetchTest(`${API}/api/field/teams`, 'Field Teams (DB)');
+}
+
+// ── Test 5: Mission endpoint ──
+async function testMissionEndpoint() {
+    await fetchTest(`${API}/api/field/team/team_alpha/mission`, 'Team Alpha Mission');
+}
+
+// ── Test 6: Gateway WebSocket ──
+function testGatewayWS() {
+    addResult('Gateway WS', 'INFO', 'Connecting...');
+    try {
+        const ws = new WebSocket(`ws://localhost:8000/api/ws/gateway`);
+        ws.onopen = () => {
+            addResult('Gateway WS', 'PASS', 'Connected! Listening for messages...');
+            addLog('Gateway WS connected');
+        };
+        ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            addLog(`Gateway WS received: type=${msg.type}, data_keys=${Object.keys(msg.data||{}).join(',')}`);
+            addResult('Gateway WS Message', 'PASS', `type=${msg.type} — ${JSON.stringify(msg.data).substring(0, 150)}`);
+        };
+        ws.onerror = (e) => {
+            addResult('Gateway WS', 'FAIL', 'Connection error');
+            addLog('Gateway WS error');
+        };
+        ws.onclose = (e) => {
+            addLog(`Gateway WS closed: code=${e.code}`);
+        };
+        // Keep reference
+        window._gwWS = ws;
+    } catch(e) {
+        addResult('Gateway WS', 'FAIL', e.message);
+    }
+}
+
+// ── Test 7: Field WebSocket ──
+function testFieldWS() {
+    addResult('Field WS (team_alpha)', 'INFO', 'Connecting...');
+    try {
+        const ws = new WebSocket(`ws://localhost:8000/api/ws/field/team_alpha`);
+        ws.onopen = () => {
+            addResult('Field WS', 'PASS', 'Connected as team_alpha! Listening...');
+            addLog('Field WS connected as team_alpha');
+        };
+        ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            addLog(`Field WS received: type=${msg.type}, data=${JSON.stringify(msg.data).substring(0, 200)}`);
+            addResult('Field WS Message', 'PASS', `type=${msg.type} — ${JSON.stringify(msg.data).substring(0, 150)}`);
+        };
+        ws.onerror = () => {
+            addResult('Field WS', 'FAIL', 'Connection error');
+        };
+        ws.onclose = (e) => addLog(`Field WS closed: code=${e.code}`);
+        window._fieldWS = ws;
+    } catch(e) {
+        addResult('Field WS', 'FAIL', e.message);
+    }
+}
+
+// ── Test 8: Command WebSocket ──
+function testCommandWS() {
+    addResult('Command WS', 'INFO', 'Connecting...');
+    try {
+        const ws = new WebSocket(`ws://localhost:8000/api/ws/command`);
+        ws.onopen = () => {
+            addResult('Command WS', 'PASS', 'Connected! Listening...');
+            addLog('Command WS connected');
+        };
+        ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            addLog(`Command WS received: type=${msg.type}`);
+        };
+        ws.onerror = () => addResult('Command WS', 'FAIL', 'Connection error');
+        ws.onclose = (e) => addLog(`Command WS closed: code=${e.code}`);
+        window._cmdWS = ws;
+    } catch(e) {
+        addResult('Command WS', 'FAIL', e.message);
+    }
+}
+
+// ── Fire a single test event via the feeder ──
+async function fireSingleEvent() {
+    addResult('Fire Event', 'INFO', 'Starting scenario at 10x...');
+    try {
+        // First reset
+        await fetch(`${API}/api/gateway/scenario/reset`, {method:'POST'});
+        addLog('Scenario reset');
+        // Then start
+        const r = await fetch(`${API}/api/gateway/scenario/start?speed=10`, {method:'POST'});
+        const d = await r.json();
+        addResult('Fire Event', 'PASS', JSON.stringify(d).substring(0, 200));
+        addLog('Scenario started at 10x — watch for WS messages above');
+    } catch(e) {
+        addResult('Fire Event', 'FAIL', e.message);
+    }
+}
+
+// ── Run all ──
+async function runAll() {
+    results.innerHTML = '';
+    await testBackendHealth();
+    await testFeeder();
+    await testIntakeDB();
+    await testTeams();
+    await testMissionEndpoint();
+    testGatewayWS();
+    testFieldWS();
+    testCommandWS();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodShield 999 Emergency Gateway</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+Bengali:wght@400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e14;
+    --surface: #111820;
+    --surface2: #182030;
+    --border: #1e2a3a;
+    --text: #c8d3e0;
+    --text-dim: #6b7d94;
+    --accent: #ff3b3b;
+    --accent-glow: rgba(255,59,59,0.15);
+    --green: #00e676;
+    --amber: #ffc107;
+    --blue: #42a5f5;
+    --critical: #ff1744;
+    --high: #ff6d00;
+    --medium: #ffab00;
+    --low: #69f0ae;
+  }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-glow);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .live-dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .scenario-info {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: #253045; border-color: #3a4a60; }
+  .btn-play { color: var(--green); border-color: rgba(0,230,118,0.3); }
+  .btn-pause { color: var(--amber); border-color: rgba(255,193,7,0.3); }
+  .btn-reset { color: var(--text-dim); }
+  select.speed-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 11px;
+  }
+
+  /* Main grid */
+  .main {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: 1fr 250px;
+    height: calc(100vh - 52px);
+  }
+
+  /* Stats panel */
+  .stats-panel {
+    grid-row: 1 / 3;
+    padding: 16px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .stat-section {
+    margin-bottom: 20px;
+  }
+  .stat-section h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12px;
+  }
+  .stat-value {
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .stat-big {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .urgency-critical { color: var(--critical); }
+  .urgency-high { color: var(--high); }
+  .urgency-medium { color: var(--medium); }
+  .urgency-low { color: var(--low); }
+
+  /* Feed */
+  .feed-panel {
+    padding: 0;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .feed-header {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    z-index: 5;
+  }
+
+  .feed-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    animation: slideIn 0.3s ease;
+    transition: background 0.2s;
+  }
+  .feed-item:hover { background: var(--surface); }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .feed-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+  .feed-time { color: var(--text-dim); }
+  .feed-source {
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .source-call_999 { color: var(--accent); border: 1px solid rgba(255,59,59,0.3); }
+  .source-sms { color: var(--blue); border: 1px solid rgba(66,165,245,0.3); }
+  .source-social_media { color: #ce93d8; border: 1px solid rgba(206,147,216,0.3); }
+  .feed-location {
+    font-family: 'Noto Sans Bengali', sans-serif;
+    font-size: 13px;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .feed-message {
+    font-family: 'Noto Sans Bengali', 'JetBrains Mono', sans-serif;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    line-height: 1.5;
+    max-height: 40px;
+    overflow: hidden;
+  }
+  .feed-bottom {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+  }
+  .urgency-badge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+  .badge-critical { background: rgba(255,23,68,0.15); color: var(--critical); }
+  .badge-high { background: rgba(255,109,0,0.15); color: var(--high); }
+  .badge-medium { background: rgba(255,171,0,0.15); color: var(--medium); }
+  .badge-low { background: rgba(105,240,174,0.15); color: var(--low); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .status-received { background: var(--amber); }
+  .status-sent_to_agent2 { background: var(--blue); }
+  .status-processed { background: var(--green); }
+
+  /* Map */
+  .map-panel {
+    border-top: 1px solid var(--border);
+  }
+  #intake-map { width: 100%; height: 100%; }
+  .leaflet-tile-pane { filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7); }
+
+  /* Connection indicator */
+  .conn-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .conn-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .conn-dot.connected { background: var(--green); }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 3px;
+    background: var(--surface2);
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--high));
+    transition: width 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+    <div>
+      <div class="title">FloodShield 999 Emergency Gateway</div>
+      <div class="scenario-info" id="scenarioInfo">Scenario: Sylhet Flood 2024 | Speed: 5x | Idle</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div class="controls">
+      <button class="btn btn-play" onclick="startScenario()">▶ Play</button>
+      <button class="btn btn-pause" onclick="pauseScenario()">⏸ Pause</button>
+      <button class="btn btn-reset" onclick="resetScenario()">⏹ Reset</button>
+      <select class="speed-select" id="speedSelect" onchange="setSpeed(this.value)">
+        <option value="1">1x</option>
+        <option value="2">2x</option>
+        <option value="5" selected>5x</option>
+        <option value="10">10x</option>
+      </select>
+    </div>
+    <div class="conn-status">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">Connecting…</span>
+    </div>
+  </div>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+
+<div class="main">
+  <!-- Stats Panel -->
+  <div class="stats-panel">
+    <div class="stat-section">
+      <h3>Total Intake</h3>
+      <div class="stat-big" id="statTotal">0</div>
+    </div>
+    <div class="stat-section">
+      <h3>Pipeline Status</h3>
+      <div class="stat-row"><span>Pending</span><span class="stat-value" style="color:var(--amber)" id="statPending">0</span></div>
+      <div class="stat-row"><span>Processing</span><span class="stat-value" style="color:var(--blue)" id="statProcessing">0</span></div>
+      <div class="stat-row"><span>Processed</span><span class="stat-value" style="color:var(--green)" id="statProcessed">0</span></div>
+      <div class="stat-row"><span>Duplicates</span><span class="stat-value" style="color:var(--text-dim)" id="statDuplicate">0</span></div>
+      <div class="stat-row"><span>False Alarm</span><span class="stat-value" style="color:var(--text-dim)" id="statFalse">0</span></div>
+    </div>
+    <div class="stat-section">
+      <h3>Urgency Breakdown</h3>
+      <div class="stat-row"><span class="urgency-critical">● Critical</span><span class="stat-value urgency-critical" id="statCritical">0</span></div>
+      <div class="stat-row"><span class="urgency-high">● High</span><span class="stat-value urgency-high" id="statHigh">0</span></div>
+      <div class="stat-row"><span class="urgency-medium">● Medium</span><span class="stat-value urgency-medium" id="statMedium">0</span></div>
+      <div class="stat-row"><span class="urgency-low">● Low</span><span class="stat-value urgency-low" id="statLow">0</span></div>
+    </div>
+    <div class="stat-section">
+      <h3>Source Breakdown</h3>
+      <div class="stat-row"><span>📞 999 Calls</span><span class="stat-value" id="statCalls">0</span></div>
+      <div class="stat-row"><span>📱 SMS</span><span class="stat-value" id="statSMS">0</span></div>
+      <div class="stat-row"><span>🌐 Social Media</span><span class="stat-value" id="statSocial">0</span></div>
+    </div>
+  </div>
+
+  <!-- Live Feed -->
+  <div class="feed-panel" id="feedPanel">
+    <div class="feed-header">Live Intake Feed</div>
+    <div id="feedList"></div>
+  </div>
+
+  <!-- Mini Map -->
+  <div class="map-panel">
+    <div id="intake-map"></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws/gateway`;
+
+let ws = null;
+let map = null;
+let markers = [];
+let stats = { total: 0, pending: 0, processing: 0, processed: 0, duplicate: 0, false_alarm: 0,
+              critical: 0, high: 0, medium: 0, low: 0, calls: 0, sms: 0, social: 0 };
+
+// ------- Map -------
+function initMap() {
+    map = L.map('intake-map', {zoomControl: false}).setView([25.05, 91.45], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OSM'
+    }).addTo(map);
+}
+
+function addMapDot(lat, lng, urgency) {
+    if (!map || !lat || !lng) return;
+    const colors = { critical: '#ff1744', high: '#ff6d00', medium: '#ffab00', low: '#69f0ae' };
+    const m = L.circleMarker([lat, lng], {
+        radius: urgency === 'critical' ? 8 : 6,
+        fillColor: colors[urgency] || '#42a5f5',
+        fillOpacity: 0.8,
+        color: colors[urgency] || '#42a5f5',
+        weight: 1,
+    }).addTo(map);
+    markers.push(m);
+    // Pulse effect for critical
+    if (urgency === 'critical') {
+        const pulse = L.circleMarker([lat, lng], {
+            radius: 14, fillColor: '#ff1744', fillOpacity: 0.2, color: '#ff1744', weight: 1
+        }).addTo(map);
+        setTimeout(() => map.removeLayer(pulse), 2000);
+    }
+}
+
+// ------- WebSocket -------
+function connectWS() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+        document.getElementById('connDot').classList.add('connected');
+        document.getElementById('connText').textContent = 'Connected';
+        // Auto-load history on connect to catch up on any missed events
+        loadHistory();
+    };
+    ws.onclose = () => {
+        document.getElementById('connDot').classList.remove('connected');
+        document.getElementById('connText').textContent = 'Reconnecting…';
+        setTimeout(connectWS, 2000);
+    };
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'new_intake') handleNewIntake(msg.data);
+        if (msg.type === 'intake_update') handleIntakeUpdate(msg.data);
+    };
+}
+
+// Load missed events from DB (catch-up mechanism)
+async function loadHistory() {
+    try {
+        // Load stats from DB
+        const statsResp = await fetch(`${API}/api/gateway/intake/stats`);
+        if (statsResp.ok) {
+            const dbStats = await statsResp.json();
+            if (dbStats.total && dbStats.total > stats.total) {
+                stats.total = dbStats.total;
+                stats.pending = dbStats.pending || 0;
+                stats.processing = dbStats.processing || 0;
+                stats.processed = dbStats.processed || 0;
+                stats.duplicate = dbStats.duplicate || 0;
+                stats.false_alarm = dbStats.false_alarm || 0;
+                stats.critical = dbStats.critical || 0;
+                stats.high = dbStats.high || 0;
+                stats.medium = dbStats.medium || 0;
+                stats.low = dbStats.low_urgency || 0;
+                stats.calls = dbStats.calls_999 || 0;
+                stats.sms = dbStats.sms || 0;
+                stats.social = dbStats.social_media || 0;
+                updateStatsUI();
+            }
+        }
+
+        // Load recent events for the feed
+        const feedResp = await fetch(`${API}/api/gateway/intake?limit=50`);
+        if (feedResp.ok) {
+            const events = await feedResp.json();
+            if (events.length > 0) {
+                // Add events to feed in chronological order (oldest first)
+                const sorted = events.reverse();
+                for (const evt of sorted) {
+                    addFeedItem({
+                        event_id: evt.scenario_event_id || '',
+                        source_type: evt.source_type,
+                        raw_message: evt.raw_message,
+                        location_description: evt.location_description,
+                        auto_detected_urgency: evt.auto_detected_urgency,
+                        timestamp: evt.received_at,
+                        caller_name: evt.caller_name,
+                        location: { lat: evt.location_lat, lng: evt.location_lng },
+                    });
+                    // Add map dots
+                    addMapDot(evt.location_lat, evt.location_lng, evt.auto_detected_urgency || 'medium');
+                }
+                console.log(`Loaded ${events.length} historical events`);
+            }
+        }
+    } catch(e) {
+        console.log('History load skipped:', e.message);
+    }
+}
+
+function handleNewIntake(data) {
+    if (data.type === 'scenario_complete') {
+        document.getElementById('scenarioInfo').textContent += ' | ✓ COMPLETE';
+        return;
+    }
+
+    // Update stats
+    stats.total++;
+    stats.pending++;
+    const u = data.auto_detected_urgency || 'medium';
+    stats[u] = (stats[u] || 0) + 1;
+    const src = data.source_type || 'sms';
+    if (src === 'call_999') stats.calls++;
+    else if (src === 'sms') stats.sms++;
+    else stats.social++;
+    updateStatsUI();
+
+    // Add to feed
+    addFeedItem(data);
+
+    // Add to map
+    const loc = data.location || {};
+    addMapDot(loc.lat, loc.lng, u);
+}
+
+function handleIntakeUpdate(data) {
+    const el = document.querySelector(`[data-event="${data.event_id}"] .item-status`);
+    if (el) {
+        const s = data.status;
+        el.innerHTML = `<span class="status-dot status-${s}"></span> ${s.replace(/_/g, ' ')}`;
+    }
+    if (data.status === 'processed') { stats.pending--; stats.processed++; }
+    if (data.status === 'sent_to_agent2') { stats.pending--; stats.processing++; }
+    updateStatsUI();
+}
+
+function addFeedItem(data) {
+    const feed = document.getElementById('feedList');
+    const u = data.auto_detected_urgency || 'medium';
+    const src = data.source_type || 'sms';
+    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : '--:--';
+    const callerInfo = data.caller_name ? `<span style="color:#fff;font-weight:600;margin-left:8px">${data.caller_name}</span>` : '';
+
+    const item = document.createElement('div');
+    item.className = 'feed-item';
+    item.dataset.event = data.event_id || '';
+    item.innerHTML = `
+        <div class="feed-meta">
+            <span class="feed-time">${time}</span>
+            <span class="feed-source source-${src}">${src.replace('_',' ')}</span>
+            ${callerInfo}
+        </div>
+        <div class="feed-location">${data.location_description || 'Unknown location'}</div>
+        <div class="feed-message">"${(data.raw_message || '').substring(0, 120)}"</div>
+        <div class="feed-bottom">
+            <span class="urgency-badge badge-${u}">${u}</span>
+            <span class="item-status"><span class="status-dot status-received"></span> received</span>
+        </div>
+    `;
+    feed.insertBefore(item, feed.firstChild);
+
+    // Keep feed max 100 items
+    while (feed.children.length > 100) feed.removeChild(feed.lastChild);
+}
+
+function updateStatsUI() {
+    document.getElementById('statTotal').textContent = stats.total;
+    document.getElementById('statPending').textContent = stats.pending;
+    document.getElementById('statProcessing').textContent = stats.processing;
+    document.getElementById('statProcessed').textContent = stats.processed;
+    document.getElementById('statDuplicate').textContent = stats.duplicate;
+    document.getElementById('statFalse').textContent = stats.false_alarm;
+    document.getElementById('statCritical').textContent = stats.critical;
+    document.getElementById('statHigh').textContent = stats.high;
+    document.getElementById('statMedium').textContent = stats.medium;
+    document.getElementById('statLow').textContent = stats.low;
+    document.getElementById('statCalls').textContent = stats.calls;
+    document.getElementById('statSMS').textContent = stats.sms;
+    document.getElementById('statSocial').textContent = stats.social;
+}
+
+// ------- Scenario Controls -------
+async function startScenario() {
+    const speed = document.getElementById('speedSelect').value;
+    try {
+        const r = await fetch(`${API}/api/gateway/scenario/start?speed=${speed}`, {method:'POST'});
+        const d = await r.json();
+        document.getElementById('scenarioInfo').textContent =
+            `Scenario: Sylhet Flood 2024 | Speed: ${speed}x | ▶ Playing`;
+        if (d.progress_pct !== undefined) {
+            document.getElementById('progressFill').style.width = d.progress_pct + '%';
+        }
+    } catch(e) { console.error('Start failed:', e); }
+}
+
+async function pauseScenario() {
+    try {
+        await fetch(`${API}/api/gateway/scenario/pause`, {method:'POST'});
+        document.getElementById('scenarioInfo').textContent =
+            document.getElementById('scenarioInfo').textContent.replace('Playing', 'Paused');
+    } catch(e) { console.error(e); }
+}
+
+async function resetScenario() {
+    try {
+        await fetch(`${API}/api/gateway/scenario/reset`, {method:'POST'});
+        document.getElementById('feedList').innerHTML = '';
+        stats = { total:0, pending:0, processing:0, processed:0, duplicate:0, false_alarm:0,
+                  critical:0, high:0, medium:0, low:0, calls:0, sms:0, social:0 };
+        updateStatsUI();
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+        document.getElementById('progressFill').style.width = '0%';
+        document.getElementById('scenarioInfo').textContent = 'Scenario: Sylhet Flood 2024 | Speed: 5x | Idle';
+    } catch(e) { console.error(e); }
+}
+
+async function setSpeed(val) {
+    try { await fetch(`${API}/api/gateway/scenario/start?speed=${val}`, {method:'POST'}); } catch(e) {}
+}
+
+// Poll scenario status for progress bar
+setInterval(async () => {
+    try {
+        const r = await fetch(`${API}/api/gateway/scenario/status`);
+        const d = await r.json();
+        if (d.progress_pct !== undefined)
+            document.getElementById('progressFill').style.width = d.progress_pct + '%';
+    } catch(e) {}
+}, 3000);
+
+// ------- Init -------
+initMap();
+connectWS();
+</script>
+</body>
+</html>

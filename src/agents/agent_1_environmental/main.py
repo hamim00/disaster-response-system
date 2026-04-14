@@ -49,6 +49,7 @@ from predictor import (
     AlertGenerator,
     PredictionOrchestrator
 )
+from river_monitor import RiverMonitor
 
 # Configure logging
 logging.basicConfig(
@@ -167,6 +168,10 @@ class EnvironmentalIntelligenceAgent:
         self.alert_generator: Optional[AlertGenerator] = None
         self.prediction_orchestrator: Optional[PredictionOrchestrator] = None
         
+        # River discharge monitor (GloFAS via Open-Meteo)
+        self.river_monitor: Optional[RiverMonitor] = None
+        self.river_monitoring_task: Optional[asyncio.Task] = None
+        
         # Sentinel zones (loaded from database or config)
         self.sentinel_zones: List[SentinelZone] = []
         
@@ -279,6 +284,16 @@ class EnvironmentalIntelligenceAgent:
         )
         logger.info("Prediction system initialized")
         
+        # ── River discharge monitor (GloFAS) ──
+        try:
+            self.river_monitor = RiverMonitor({})
+            # Pre-fetch river data so it's ready for the first monitoring cycle
+            await self.river_monitor._poll_all_zones()
+            logger.info("River discharge monitor initialized (initial poll complete)")
+        except Exception as e:
+            logger.warning(f"River monitor failed to init: {e}")
+            self.river_monitor = None
+        
         # ── Load sentinel zones ──
         try:
             await self.load_sentinel_zones()
@@ -301,6 +316,16 @@ class EnvironmentalIntelligenceAgent:
                 await self.monitoring_task
             except asyncio.CancelledError:
                 pass
+        
+        # Cancel river monitoring task
+        if self.river_monitoring_task and not self.river_monitoring_task.done():
+            self.river_monitoring_task.cancel()
+            try:
+                await self.river_monitoring_task
+            except asyncio.CancelledError:
+                pass
+        if self.river_monitor:
+            self.river_monitor.stop_monitoring()
         
         # Close connections
         if self.db_pool:
@@ -538,6 +563,25 @@ class EnvironmentalIntelligenceAgent:
             if satellite_summary:
                 logger.info(f"   Satellite data merged for {len(satellite_summary)} zones")
             
+            # Merge river discharge data (from GloFAS monitor)
+            river_status = {}
+            if self.river_monitor:
+                river_status = self.river_monitor.get_latest_river_status()
+                if river_status:
+                    logger.info(f"   River discharge data available for {len(river_status)} zones")
+                for data in processed_data:
+                    zone = data['zone']
+                    zone_name_lower = zone.name.lower()
+                    river_data = river_status.get(zone_name_lower)
+                    if river_data:
+                        data['river_discharge'] = river_data
+                        logger.info(
+                            f"   [RIVER] {zone.name}: "
+                            f"{river_data['current_discharge_m3s']} m³/s "
+                            f"({river_data['threshold_level']}, "
+                            f"p{river_data['percentile_rank']:.0f})"
+                        )
+            
             # Step 4: Get historical risk scores
             logger.info("Step 4: Retrieving historical risk scores...")
             historical_risks = {}
@@ -584,6 +628,84 @@ class EnvironmentalIntelligenceAgent:
                 zone.last_monitored = datetime.utcnow()
                 await self.spatial_analyzer.store_sentinel_zone(zone)
             
+            # Step 7: Publish flood alerts to Redis for Agent 2
+            logger.info("Step 7: Publishing flood alerts to Redis...")
+            if self.redis_client:
+                published_count = 0
+                for prediction, pdata in zip(predictions, processed_data):
+                    zone = prediction.zone
+                    zone_name_lower = zone.name.lower()
+                    
+                    # Build data_sources dict
+                    data_sources = {}
+                    
+                    # Weather
+                    weather = pdata.get('weather')
+                    if weather:
+                        data_sources['weather'] = {
+                            'rainfall_mm': getattr(weather, 'rainfall', 0) or 0,
+                            'alert_level': pdata.get('normalized_weather', {}).get(
+                                'weather_severity_label', 'NORMAL'
+                            ),
+                        }
+                    
+                    # Satellite
+                    sat_flood_pct = pdata.get('satellite_flood_pct', 0.0) or 0.0
+                    if pdata.get('satellite_risk'):
+                        data_sources['satellite'] = {
+                            'flood_area_pct': sat_flood_pct,
+                            'risk_level': pdata.get('satellite_risk', 'MINIMAL'),
+                        }
+                    
+                    # Social media
+                    social = pdata.get('social_analysis', {})
+                    if social.get('flood_reports', 0) > 0:
+                        data_sources['social_media'] = {
+                            'flood_reports': social.get('flood_reports', 0),
+                            'urgency': social.get('urgency_label', 'LOW'),
+                        }
+                    
+                    # River discharge
+                    river = pdata.get('river_discharge')
+                    if river:
+                        data_sources['river_discharge'] = {
+                            'current_m3s': river['current_discharge_m3s'],
+                            'forecast_peak_m3s': river['forecast_peak_m3s'],
+                            'forecast_peak_date': river['forecast_peak_date'],
+                            'percentile_rank': river['percentile_rank'],
+                            'threshold_level': river['threshold_level'],
+                            'trend': river['trend'],
+                            'days_rising': river['days_rising'],
+                        }
+                    
+                    # Build flood alert message (matches Agent 2 expected format)
+                    flood_alert = {
+                        'zone_id': zone_name_lower,
+                        'zone_name': zone.name,
+                        'flood_pct': sat_flood_pct,
+                        'flood_depth_m': pdata.get('depth_analysis', {}).get(
+                            'statistics', {}
+                        ).get('mean_depth_m'),
+                        'risk_score': prediction.risk_score,
+                        'severity': prediction.severity_level.value,
+                        'confidence': prediction.confidence,
+                        'coordinates': {
+                            'lat': zone.center.latitude,
+                            'lon': zone.center.longitude,
+                        },
+                        'data_sources': data_sources,
+                        'timestamp': datetime.utcnow().isoformat(),
+                    }
+                    
+                    await self.redis_client.publish(
+                        'flood_alert', json.dumps(flood_alert)
+                    )
+                    published_count += 1
+                
+                logger.info(f"   Published {published_count} flood alerts to Redis")
+            else:
+                logger.warning("   Redis unavailable — skipping flood_alert publish")
+            
             # Calculate processing time
             processing_time = (datetime.utcnow() - cycle_start).total_seconds()
             
@@ -601,7 +723,8 @@ class EnvironmentalIntelligenceAgent:
                     'weather_api': 'operational',
                     'social_media': 'operational',
                     'spatial_db': 'operational',
-                    'satellite_gee': 'operational' if satellite_summary else 'unavailable'
+                    'satellite_gee': 'operational' if satellite_summary else 'unavailable',
+                    'river_discharge': 'operational' if river_status else 'unavailable'
                 },
                 processing_time_seconds=processing_time,
                 next_update_in_seconds=next_update
@@ -717,6 +840,12 @@ async def lifespan(app: FastAPI):
     
     # Start monitoring in background
     agent.monitoring_task = asyncio.create_task(agent.start_monitoring())
+    
+    # Start river discharge monitoring (separate 30-min loop)
+    if agent.river_monitor:
+        agent.river_monitoring_task = asyncio.create_task(
+            agent.river_monitor.start_monitoring()
+        )
     
     yield
     

@@ -100,9 +100,13 @@ async def lifespan(app: FastAPI):
         if redis_client:
             asyncio.create_task(handler.start_listening())
             asyncio.create_task(handler.publish_heartbeat())
-            logger.info("Agent 4 listening on dispatch_order channel")
+            # NEW: Start feedback listener to track dispatch lifecycle
+            asyncio.create_task(handler.start_feedback_listener())
+            logger.info("Agent 4 listening on dispatch_order + team_feedback + team_status_update channels")
         else:
             logger.info("Agent 4 running without Redis subscription")
+        # Start resource return lifecycle manager
+        asyncio.create_task(handler.run_lifecycle_manager())
     else:
         handler = Agent4RedisHandler(None, None)
         logger.warning("Agent 4 running in degraded mode (no DB, no Redis)")
@@ -146,8 +150,8 @@ async def root():
         "agent": "agent_4_dispatch",
         "version": "1.0.0",
         "port": AGENT_PORT,
-        "subscribes_to": ["dispatch_order"],
-        "publishes_to": ["dispatch_status", "agent_status"],
+        "subscribes_to": ["dispatch_order", "team_feedback", "team_status_update"],
+        "publishes_to": ["dispatch_status", "dispatch_status_change", "agent_status"],
         "db_connected": db_pool is not None,
         "redis_connected": redis_client is not None,
     }
@@ -264,6 +268,55 @@ async def get_active_dispatches():
             for p in handler._plans
             if p.status == "active"
         ]
+    return []
+
+
+@app.get("/routes/geo")
+async def get_routes_geo():
+    """
+    Return all team routes with coordinates for Leaflet map rendering.
+    Each route has origin, destination, status, transport_mode, eta, unit_name.
+    """
+    if db_pool:
+        try:
+            rows = await db_pool.fetch("""
+                SELECT tr.unit_name, tr.resource_type, tr.transport_mode,
+                       tr.distance_km, tr.eta_minutes, tr.status,
+                       ST_Y(tr.origin::geometry) AS orig_lat,
+                       ST_X(tr.origin::geometry) AS orig_lon,
+                       ST_Y(tr.destination::geometry) AS dest_lat,
+                       ST_X(tr.destination::geometry) AS dest_lon,
+                       dr.zone_name, dr.status AS dispatch_status,
+                       dr.priority
+                FROM team_routes tr
+                JOIN dispatch_routes dr ON dr.id = tr.dispatch_id
+                ORDER BY dr.priority ASC, dr.timestamp DESC
+            """)
+            return [dict(r) for r in rows]
+        except Exception as exc:
+            logger.error("Routes geo query failed: %s", exc)
+
+    # Fallback to in-memory plans
+    if handler and handler._plans:
+        routes = []
+        for p in handler._plans:
+            for tr in p.team_routes:
+                routes.append({
+                    "unit_name": tr.unit_name,
+                    "resource_type": tr.resource_type,
+                    "transport_mode": tr.transport_mode.value,
+                    "distance_km": tr.distance_km,
+                    "eta_minutes": tr.eta_minutes,
+                    "status": tr.status.value,
+                    "orig_lat": tr.origin.latitude,
+                    "orig_lon": tr.origin.longitude,
+                    "dest_lat": tr.destination.latitude,
+                    "dest_lon": tr.destination.longitude,
+                    "zone_name": p.zone_name,
+                    "dispatch_status": p.status.value if hasattr(p.status, 'value') else p.status,
+                    "priority": p.priority,
+                })
+        return routes
     return []
 
 

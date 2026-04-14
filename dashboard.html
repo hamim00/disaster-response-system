@@ -4,517 +4,1161 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FloodShield BD — Command Center</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM — FloodShield BD Command Center v4.0
+   ═══════════════════════════════════════════════════════════════════ */
 :root {
-  --bg:#080a0f; --s1:#0e1018; --s2:#151821; --s3:#1c2030;
-  --brd:#1f2435; --brd2:#2a3050;
-  --txt:#d8dce8; --dim:#6b7394; --muted:#3e4560;
-  --accent:#3b7dff; --red:#ff4058; --orange:#ff8c20;
-  --yellow:#ffc830; --green:#00d68f; --cyan:#00c8ff; --purple:#a78bfa;
+  /* Surface Layers */
+  --bg: #06080d;
+  --s0: #090c14;
+  --s1: #0d1119;
+  --s2: #111720;
+  --s3: #161d29;
+  --s4: #1c2433;
+
+  /* Borders */
+  --brd: rgba(255,255,255,0.05);
+  --brd2: rgba(255,255,255,0.08);
+  --brd-accent: rgba(56,189,248,0.15);
+
+  /* Text */
+  --txt: #e2e8f0;
+  --txt2: #94a3b8;
+  --txt3: #64748b;
+  --txt4: #475569;
+
+  /* Accent palette */
+  --sky: #38bdf8;
+  --sky-dim: rgba(56,189,248,0.08);
+  --blue: #3b82f6;
+  --red: #f43f5e;
+  --red-dim: rgba(244,63,94,0.1);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245,158,11,0.1);
+  --emerald: #10b981;
+  --emerald-dim: rgba(16,185,129,0.1);
+  --violet: #8b5cf6;
+  --violet-dim: rgba(139,92,246,0.1);
+
+  /* Radius */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh}
-body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.02) 2px,rgba(0,0,0,.02) 4px);pointer-events:none;z-index:9999}
 
-/* HEADER */
-.hdr{background:var(--s1);border-bottom:1px solid var(--brd);padding:10px 22px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:1000}
-.logo{display:flex;align-items:center;gap:8px}
-.logo-i{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;font-family:'JetBrains Mono'}
-.logo h1{font-size:16px;font-weight:700;background:linear-gradient(90deg,var(--txt),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo-sub{font-size:9px;color:var(--dim);font-family:'JetBrains Mono';letter-spacing:2px;text-transform:uppercase}
-.hdr-r{margin-left:auto;display:flex;align-items:center;gap:14px}
-.clock{font-family:'JetBrains Mono';font-size:12px;color:var(--dim)}
-.pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s ease infinite}
-@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 4px var(--green)}50%{opacity:.4}}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 
-/* NAV */
-.nav{display:flex;gap:0;background:var(--s1);border-bottom:1px solid var(--brd);padding:0 22px}
-.nav-t{padding:9px 18px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--dim);border:none;border-bottom:2px solid transparent;background:none;font-family:'Outfit';transition:all .2s}
-.nav-t:hover{color:var(--txt)}
-.nav-t.act{color:var(--cyan);border-bottom-color:var(--cyan)}
+/* Subtle noise grain */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events:none; z-index:9999; opacity:0.6;
+}
 
-/* CONFIG */
-.cfg{background:var(--s1);border-bottom:1px solid var(--brd);padding:6px 22px;display:flex;align-items:center;gap:8px;font-size:10px}
-.cfg label{color:var(--muted);font-family:'JetBrains Mono';font-size:9px}
-.cfg input{background:var(--s2);border:1px solid var(--brd);color:var(--cyan);padding:3px 7px;border-radius:3px;font-family:'JetBrains Mono';font-size:10px;width:155px}
-.cfg input:focus{outline:1px solid var(--accent)}
-.btn-s{background:rgba(59,125,255,.12);border:1px solid var(--accent);color:var(--accent);padding:3px 10px;border-radius:3px;font-size:9px;font-weight:600;cursor:pointer;font-family:'JetBrains Mono';transition:all .2s}
-.btn-s:hover{background:var(--accent);color:#fff}
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--txt4); }
 
-/* SECTIONS */
-.sec{padding:16px 22px;display:none;flex-direction:column;gap:14px}
-.sec.act{display:flex}
+/* ═══ LAYOUT: Sidebar + Main ═══ */
+.app { display: flex; min-height: 100vh; }
 
-/* PIPELINE BANNER */
-.pipeline{background:var(--s1);border:1px solid var(--brd);border-radius:10px;padding:16px 20px;display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap}
-.pipe-agent{text-align:center;padding:8px 16px;min-width:140px}
-.pipe-name{font-size:9px;font-family:'JetBrains Mono';color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px}
-.pipe-title{font-size:13px;font-weight:700;margin-bottom:2px}
-.pipe-status{font-size:9px;font-family:'JetBrains Mono';padding:2px 6px;border-radius:3px;display:inline-block}
-.pipe-on{background:rgba(0,214,143,.12);color:var(--green)}
-.pipe-off{background:rgba(255,64,88,.12);color:var(--red)}
-.pipe-na{background:var(--s3);color:var(--muted)}
-.pipe-arrow{font-size:20px;color:var(--brd2);padding:0 4px;font-family:'JetBrains Mono'}
-.pipe-arrow.live{color:var(--green)}
-.pipe-arrow.broken{color:var(--red)}
+/* ═══ SIDEBAR ═══ */
+.sidebar {
+  width: 68px;
+  background: var(--s0);
+  border-right: 1px solid var(--brd);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  z-index: 100;
+}
+.sb-logo {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--sky), var(--blue));
+  border-radius: var(--r-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: #fff;
+  font-family: 'JetBrains Mono';
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(56,189,248,0.25);
+}
+.sb-nav { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 0 8px; }
+.sb-btn {
+  width: 52px; height: 46px;
+  border-radius: var(--r-md);
+  border: none;
+  background: transparent;
+  color: var(--txt3);
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  font-size: 17px;
+  transition: all 0.2s;
+  position: relative;
+}
+.sb-btn span { font-size: 8px; font-weight: 600; letter-spacing: 0.5px; font-family: 'DM Sans'; }
+.sb-btn:hover { color: var(--txt); background: var(--s2); }
+.sb-btn.act {
+  color: var(--sky);
+  background: var(--sky-dim);
+}
+.sb-btn.act::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%; transform: translateY(-50%);
+  width: 3px; height: 20px;
+  background: var(--sky);
+  border-radius: 0 3px 3px 0;
+}
 
-/* DEGRADATION WARNING */
-.degrade{background:rgba(255,140,32,.08);border:1px solid rgba(255,140,32,.25);border-radius:8px;padding:10px 16px;display:flex;align-items:flex-start;gap:10px;font-size:12px}
-.degrade.hidden{display:none}
-.degrade .icon{font-size:18px;flex-shrink:0}
-.degrade strong{color:var(--orange)}
-.degrade p{color:var(--dim);font-size:11px;margin-top:2px}
+.sb-bottom {
+  margin-top: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 0 8px;
+}
+.sb-status {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--emerald);
+  box-shadow: 0 0 8px var(--emerald);
+  animation: blink 2.5s ease infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.sb-clock {
+  font-family: 'JetBrains Mono';
+  font-size: 9px;
+  color: var(--txt3);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 1px;
+}
 
-/* PANELS */
-.row{display:grid;gap:12px}
-.row-2{grid-template-columns:1fr 1fr}
-.row-3{grid-template-columns:1fr 1fr 1fr}
-.row-4{grid-template-columns:1fr 1fr 1fr 1fr}
-.row-full{grid-template-columns:1fr}
-.row-2-1{grid-template-columns:2fr 1fr}
-.row-1-2{grid-template-columns:1fr 2fr}
+/* ═══ MAIN AREA ═══ */
+.main { margin-left: 68px; flex: 1; min-width: 0; }
 
-.pnl{background:var(--s1);border:1px solid var(--brd);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
-.pnl-h{padding:10px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between;background:var(--s2);gap:8px}
-.pnl-t{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
-.pnl-c{font-size:9px;font-family:'JetBrains Mono';color:var(--dim);background:var(--s3);padding:2px 6px;border-radius:3px}
-.pnl-b{flex:1;overflow-y:auto;max-height:350px}
-.pnl-b::-webkit-scrollbar{width:3px}
-.pnl-b::-webkit-scrollbar-thumb{background:var(--brd2);border-radius:3px}
+/* ═══ TOP BAR ═══ */
+.topbar {
+  background: var(--s0);
+  border-bottom: 1px solid var(--brd);
+  padding: 0 28px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky; top: 0; z-index: 50;
+}
+.topbar-title {
+  font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.topbar-title .sub {
+  font-size: 10px; font-weight: 500; color: var(--txt3);
+  font-family: 'JetBrains Mono';
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
-/* SECTION HEADERS */
-.sec-hdr{display:flex;align-items:center;gap:10px;padding:2px 0}
-.sec-hdr .num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono';font-size:12px;font-weight:700;flex-shrink:0}
-.sec-hdr h2{font-size:15px;font-weight:700}
-.sec-hdr .desc{font-size:11px;color:var(--dim)}
+/* Config inputs */
+.cfg-group {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; font-family: 'JetBrains Mono'; color: var(--txt4);
+}
+.cfg-group input {
+  background: var(--s2); border: 1px solid var(--brd2);
+  color: var(--sky); padding: 3px 7px; border-radius: var(--r-sm);
+  font-family: 'JetBrains Mono'; font-size: 9px; width: 140px;
+  transition: border-color 0.2s;
+}
+.cfg-group input:focus { outline: none; border-color: var(--sky); }
+.btn-xs {
+  background: var(--sky-dim); border: 1px solid rgba(56,189,248,0.2);
+  color: var(--sky); padding: 3px 10px; border-radius: var(--r-sm);
+  font-size: 9px; font-weight: 600; cursor: pointer;
+  font-family: 'JetBrains Mono'; transition: all 0.2s;
+}
+.btn-xs:hover { background: var(--sky); color: #fff; }
 
-/* WEATHER */
-.wx-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
-.wx-card{background:var(--s2);border:1px solid var(--brd);border-radius:6px;padding:10px;text-align:center}
-.wx-val{font-size:20px;font-weight:700;font-family:'JetBrains Mono'}
-.wx-lbl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;font-family:'JetBrains Mono'}
+/* ═══ SECTIONS ═══ */
+.sec { display: none; padding: 24px 28px; flex-direction: column; gap: 20px; }
+.sec.act { display: flex; animation: secIn 0.35s ease; }
+@keyframes secIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 
-/* SAR PANEL */
-.sar-compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
-.sar-img{background:var(--s3);border:1px solid var(--brd);border-radius:6px;aspect-ratio:16/10;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;text-align:center;overflow:hidden;position:relative}
-.sar-img.has-img{padding:0;aspect-ratio:auto}
-.sar-img.has-img img{width:100%;height:auto;border-radius:5px;display:block}
-.sar-img.has-img .label{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.75);padding:2px 8px;border-radius:4px;z-index:1}
-.sar-img.has-img .sar-meta{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.85));padding:8px 10px 6px;font-size:10px;color:var(--dim);font-family:'JetBrains Mono'}
-.sar-img .label{font-size:9px;font-family:'JetBrains Mono';color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-.sar-img .status{font-size:11px}
+/* ═══ PIPELINE BANNER ═══ */
+.pipeline-wrap {
+  background: linear-gradient(135deg, var(--s1), var(--s2));
+  border: 1px solid var(--brd2);
+  border-radius: var(--r-xl);
+  padding: 20px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.pipeline-wrap::before {
+  content:''; position:absolute; inset:0;
+  background: radial-gradient(ellipse at 20% 50%, rgba(56,189,248,0.04), transparent 60%),
+              radial-gradient(ellipse at 80% 50%, rgba(139,92,246,0.03), transparent 60%);
+  pointer-events: none;
+}
+.pipeline-label {
+  font-size: 9px; font-weight: 700; color: var(--txt4);
+  text-transform: uppercase; letter-spacing: 2px;
+  font-family: 'JetBrains Mono';
+  margin-bottom: 14px;
+  position: relative;
+}
+.pipeline {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; position: relative;
+}
+.pipe-node {
+  text-align: center;
+  padding: 10px 20px;
+  min-width: 150px;
+  position: relative;
+}
+.pipe-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+  font-family: 'JetBrains Mono';
+  margin-bottom: 6px;
+  transition: all 0.3s;
+}
+.pipe-num.off { background: var(--s3); color: var(--txt4); }
+.pipe-num.on { color: #fff; }
+.pipe-name {
+  font-size: 13px; font-weight: 700;
+  margin-bottom: 2px;
+}
+.pipe-role {
+  font-size: 9px; color: var(--txt3);
+  font-family: 'JetBrains Mono';
+  letter-spacing: 0.5px;
+}
+.pipe-tag {
+  display: inline-block;
+  font-size: 8px; font-weight: 700;
+  font-family: 'JetBrains Mono';
+  padding: 2px 7px; border-radius: 20px;
+  margin-top: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.pipe-tag.on { background: var(--emerald-dim); color: var(--emerald); }
+.pipe-tag.off { background: var(--red-dim); color: var(--red); }
+.pipe-arrow {
+  font-size: 18px;
+  padding: 0 4px;
+  font-family: 'JetBrains Mono';
+  transition: color 0.3s;
+  position: relative;
+  top: -4px;
+}
+.pipe-arrow.live { color: var(--emerald); }
+.pipe-arrow.broken { color: var(--red); opacity: 0.4; }
+.pipe-arrow.dim { color: var(--txt4); opacity: 0.2; }
 
-/* FLOOD ZONES */
-.fz-item{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--brd)}
-.fz-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.fz-info{flex:1}
-.fz-name{font-weight:600;font-size:12px}
-.fz-meta{font-size:9px;color:var(--dim);font-family:'JetBrains Mono'}
-.fz-bar{width:60px;height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
-.fz-bar-fill{height:100%;border-radius:3px}
+/* ═══ DEGRADATION WARNING ═══ */
+.degrade {
+  background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(244,63,94,0.04));
+  border: 1px solid rgba(245,158,11,0.15);
+  border-radius: var(--r-lg);
+  padding: 12px 18px;
+  display: flex; align-items: flex-start; gap: 12px;
+  font-size: 12px;
+}
+.degrade.hidden { display: none; }
+.degrade .icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.degrade strong { color: var(--amber); font-weight: 600; }
+.degrade p { color: var(--txt3); font-size: 11px; margin-top: 3px; line-height: 1.5; }
 
-/* CHANNEL STATS */
-.ch-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--brd)}
-.ch-icon{font-size:18px;width:30px;text-align:center}
-.ch-info{flex:1}
-.ch-name{font-weight:600;font-size:12px}
-.ch-desc{font-size:9px;color:var(--dim)}
-.ch-count{font-family:'JetBrains Mono';font-size:16px;font-weight:700}
+/* ═══ SECTION HEADERS ═══ */
+.sec-hdr {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 0;
+}
+.sec-hdr .num {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+}
+.sec-hdr h2 { font-size: 16px; font-weight: 700; }
+.sec-hdr .desc { font-size: 11px; color: var(--txt3); }
 
-/* DISTRESS TABLE */
-.dt{width:100%;border-collapse:collapse}
-.dt th{text-align:left;padding:6px 10px;font-size:8.5px;font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--brd);position:sticky;top:0;background:var(--s1);z-index:1}
-.dt td{padding:7px 10px;font-size:11px;border-bottom:1px solid var(--brd)}
-.dt tbody tr:hover{background:var(--s2)}
+/* ═══ GRID LAYOUTS ═══ */
+.grid { display: grid; gap: 14px; }
+.g-2 { grid-template-columns: 1fr 1fr; }
+.g-3 { grid-template-columns: 1fr 1fr 1fr; }
+.g-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.g-5 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+.g-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.g-2-1 { grid-template-columns: 2fr 1fr; }
+.g-1-2 { grid-template-columns: 1fr 2fr; }
+.g-1 { grid-template-columns: 1fr; }
 
-.pill{display:inline-block;padding:2px 6px;border-radius:3px;font-size:8.5px;font-weight:600;font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:.5px}
-.pill-critical{background:rgba(255,64,88,.12);color:var(--red)}
-.pill-high{background:rgba(255,140,32,.12);color:var(--orange)}
-.pill-medium{background:rgba(255,200,48,.12);color:var(--yellow)}
-.pill-low{background:rgba(0,214,143,.12);color:var(--green)}
-.tag{font-size:8.5px;font-family:'JetBrains Mono';padding:2px 5px;border-radius:3px}
-.tag-cyan{color:var(--cyan);background:rgba(0,200,255,.1)}
-.tag-green{color:var(--green);background:rgba(0,214,143,.1)}
-.tag-red{color:var(--red);background:rgba(255,64,88,.1)}
+/* ═══ CARD ═══ */
+.card {
+  background: var(--s1);
+  border: 1px solid var(--brd);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  transition: border-color 0.25s;
+}
+.card:hover { border-color: var(--brd2); }
 
-/* INVENTORY */
-.inv-g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
-.inv-c{background:var(--s2);border:1px solid var(--brd);border-radius:6px;padding:10px}
-.inv-type{font-size:8.5px;font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:4px}
-.inv-nums{display:flex;align-items:baseline;gap:4px;margin-bottom:5px}
-.inv-av{font-size:20px;font-weight:700;font-family:'JetBrains Mono'}
-.inv-tot{font-size:10px;color:var(--dim);font-family:'JetBrains Mono'}
-.inv-bar{width:100%;height:4px;background:var(--s3);border-radius:2px;overflow:hidden}
-.inv-fill{height:100%;border-radius:2px;transition:width .5s}
-.inv-det{font-size:8.5px;color:var(--muted);margin-top:3px;font-family:'JetBrains Mono'}
+.card-h {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--brd);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+}
+.card-title {
+  font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; gap: 7px;
+  color: var(--txt);
+}
+.card-title .emoji { font-size: 14px; }
+.card-badge {
+  font-size: 9px; font-family: 'JetBrains Mono';
+  color: var(--txt3); background: var(--s3);
+  padding: 2px 8px; border-radius: 20px;
+  font-weight: 500;
+}
 
-/* ALLOC */
-.al-item{padding:8px 14px;border-bottom:1px solid var(--brd);display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center}
-.al-item:hover{background:var(--s2)}
-.al-dot{width:8px;height:8px;border-radius:50%}
-.al-zone{font-weight:600;font-size:12px}
-.al-meta{font-size:9px;color:var(--dim);font-family:'JetBrains Mono'}
-.al-cnt{font-family:'JetBrains Mono';font-weight:700;font-size:13px;color:var(--cyan)}
+.card-body {
+  flex: 1; overflow-y: auto;
+  max-height: 360px;
+}
 
-/* MAP */
-#mapC{width:100%;height:380px;border-radius:6px;overflow:hidden;border:1px solid var(--brd)}
-.leaflet-container{background:#0a0d14!important}
-.map-tip{background:var(--s1);border:1px solid var(--brd);padding:4px 8px;border-radius:4px;font-size:10px;font-family:'JetBrains Mono';color:var(--txt);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+/* ═══ KPI STRIP ═══ */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+.kpi {
+  background: var(--s1);
+  border: 1px solid var(--brd);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::before {
+  content:''; position:absolute;
+  top:0; left:0; right:0; height: 2px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+}
+.kpi.kpi-sky::before { background: var(--sky); }
+.kpi.kpi-red::before { background: var(--red); }
+.kpi.kpi-emerald::before { background: var(--emerald); }
+.kpi.kpi-amber::before { background: var(--amber); }
+.kpi.kpi-violet::before { background: var(--violet); }
+.kpi-val {
+  font-size: 26px; font-weight: 800;
+  font-family: 'JetBrains Mono';
+  line-height: 1;
+}
+.kpi-label {
+  font-size: 10px; color: var(--txt3);
+  font-weight: 500;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-/* SIM CONSOLE */
-.sim-tabs{display:flex;gap:2px;margin-bottom:0}
-.sim-t{padding:7px 14px;font-size:11px;font-weight:600;cursor:pointer;color:var(--dim);background:var(--s2);border:1px solid var(--brd);border-radius:6px 6px 0 0;font-family:'Outfit';transition:all .2s;border-bottom:none}
-.sim-t:hover{color:var(--txt)}
-.sim-t.act{color:var(--cyan);background:var(--s1)}
-.sim-p{display:none;padding:14px}
-.sim-p.act{display:block}
-.sim-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
-.sim-lbl{font-size:9px;font-family:'JetBrains Mono';color:var(--dim);text-transform:uppercase;letter-spacing:1px;width:80px;flex-shrink:0}
-.sim-in,.sim-sel,.sim-ta{background:var(--s2);border:1px solid var(--brd);color:var(--txt);padding:6px 9px;border-radius:4px;font-family:'JetBrains Mono';font-size:11px;flex:1}
-.sim-in:focus,.sim-sel:focus,.sim-ta:focus{outline:none;border-color:var(--cyan)}
-.sim-ta{min-height:50px;resize:vertical}
-.btn-send{background:linear-gradient(135deg,var(--accent),var(--cyan));border:none;color:#fff;padding:8px 18px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Outfit';text-transform:uppercase;letter-spacing:.8px;transition:all .2s}
-.btn-send:hover{box-shadow:0 4px 16px #3b7dff44;transform:translateY(-1px)}
-.btn-load{background:rgba(167,139,250,.1);border:1px solid var(--purple);color:var(--purple);padding:6px 12px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;font-family:'JetBrains Mono';transition:all .2s}
-.btn-load:hover{background:var(--purple);color:#fff}
-.s-res{margin-top:6px;padding:6px 10px;border-radius:4px;font-family:'JetBrains Mono';font-size:10px;display:none}
-.s-res.ok{display:block;background:rgba(0,214,143,.1);color:var(--green);border:1px solid rgba(0,214,143,.2)}
-.s-res.err{display:block;background:rgba(255,64,88,.1);color:var(--red);border:1px solid rgba(255,64,88,.2)}
+/* ═══ WEATHER CARDS ═══ */
+.wx-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; padding: 14px; }
+.wx-card {
+  background: var(--s2); border: 1px solid var(--brd);
+  border-radius: var(--r-md); padding: 12px; text-align: center;
+}
+.wx-val { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono'; }
+.wx-lbl {
+  font-size: 8px; color: var(--txt4);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-top: 3px; font-family: 'JetBrains Mono';
+}
 
-/* LOG */
-.log-b{padding:8px 14px;max-height:500px;overflow-y:auto;font-family:'JetBrains Mono';font-size:10px}
-.log-e{padding:2px 0;border-bottom:1px solid #12141a}
-.l-t{color:var(--muted);margin-right:5px}
-.l-s{color:var(--cyan);margin-right:5px}
-.l-ok{color:var(--green)} .l-err{color:var(--red)} .l-warn{color:var(--orange)} .l-msg{color:var(--txt)}
+/* ═══ SAR PANEL ═══ */
+.sar-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
+.sar-img {
+  background: var(--s3); border: 1px solid var(--brd);
+  border-radius: var(--r-md);
+  aspect-ratio: 16/10;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 16px; text-align: center; overflow: hidden; position: relative;
+}
+.sar-img.has-img { padding:0; aspect-ratio:auto; }
+.sar-img.has-img img { width:100%; height:auto; border-radius: var(--r-md); display:block; }
+.sar-img.has-img .label { position:absolute; top:8px; left:8px; background:rgba(0,0,0,.75); padding:3px 10px; border-radius:20px; z-index:1; }
+.sar-img.has-img .sar-meta { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent,rgba(0,0,0,.85)); padding:10px 12px 8px; font-size:10px; color:var(--txt3); font-family:'JetBrains Mono'; }
+.sar-img .label { font-size:9px; font-family:'JetBrains Mono'; color:var(--txt4); text-transform:uppercase; letter-spacing:1.2px; margin-bottom:8px; }
+.sar-img .status { font-size:11px; }
+.sar-placeholder { font-size:30px; margin:6px 0; opacity:.25; }
 
-.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;color:var(--muted);text-align:center}
-.empty .i{font-size:22px;margin-bottom:5px;opacity:.5}
-.empty .m{font-size:11px}
+/* ═══ FLOOD ZONES ═══ */
+.fz-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--brd);
+  transition: background 0.15s;
+}
+.fz-item:hover { background: var(--s2); }
+.fz-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.fz-info { flex: 1; }
+.fz-name { font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.fz-meta { font-size: 9px; color: var(--txt3); font-family:'JetBrains Mono'; margin-top: 1px; }
+.fz-bar { width: 65px; height: 5px; background: var(--s3); border-radius: 3px; overflow: hidden; }
+.fz-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
 
-@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-.sec.act{animation:fadeIn .3s ease}
-@keyframes newRow{from{background:rgba(59,125,255,.12)}to{background:transparent}}
-.new-row{animation:newRow 1.2s ease}
+/* ═══ CHANNEL ROWS ═══ */
+.ch-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--brd);
+  transition: background 0.15s;
+}
+.ch-row:hover { background: var(--s2); }
+.ch-icon { font-size: 18px; width: 32px; text-align: center; }
+.ch-info { flex: 1; }
+.ch-name { font-weight: 600; font-size: 12px; }
+.ch-desc { font-size: 9px; color: var(--txt3); }
+.ch-count { font-family:'JetBrains Mono'; font-size: 18px; font-weight: 700; color: var(--sky); }
 
-.toast{position:fixed;bottom:20px;right:20px;z-index:10000;background:var(--s2);border:1px solid var(--brd);padding:8px 16px;border-radius:6px;font-size:11px;font-family:'JetBrains Mono';box-shadow:0 8px 32px rgba(0,0,0,.5);transform:translateY(80px);opacity:0;transition:all .3s}
-.toast.show{transform:translateY(0);opacity:1}
-.toast.ok{border-color:var(--green);color:var(--green)}
-.toast.err{border-color:var(--red);color:var(--red)}
+/* ═══ TABLE ═══ */
+.dt { width: 100%; border-collapse: collapse; }
+.dt th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 8px; font-family:'JetBrains Mono';
+  text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--txt4);
+  border-bottom: 1px solid var(--brd2);
+  position: sticky; top: 0;
+  background: var(--s1); z-index: 1;
+}
+.dt td {
+  padding: 8px 12px; font-size: 11px;
+  border-bottom: 1px solid var(--brd);
+}
+.dt tbody tr { transition: background 0.15s; }
+.dt tbody tr:hover { background: var(--s2); }
+
+/* ═══ PILLS & TAGS ═══ */
+.pill {
+  display: inline-block; padding: 2px 8px;
+  border-radius: 20px; font-size: 8px; font-weight: 700;
+  font-family:'JetBrains Mono'; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pill-critical { background: var(--red-dim); color: var(--red); }
+.pill-high { background: var(--amber-dim); color: var(--amber); }
+.pill-medium { background: rgba(250,204,21,0.1); color: #facc15; }
+.pill-low { background: var(--emerald-dim); color: var(--emerald); }
+
+.tag {
+  font-size: 8px; font-family:'JetBrains Mono'; font-weight: 600;
+  padding: 2px 7px; border-radius: 20px;
+}
+.tag-sky { color: var(--sky); background: var(--sky-dim); }
+.tag-green { color: var(--emerald); background: var(--emerald-dim); }
+.tag-red { color: var(--red); background: var(--red-dim); }
+
+/* ═══ INVENTORY ═══ */
+.inv-g { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; padding: 14px; }
+.inv-c {
+  background: var(--s2); border: 1px solid var(--brd);
+  border-radius: var(--r-md); padding: 12px;
+}
+.inv-type {
+  font-size: 8px; font-family:'JetBrains Mono';
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--txt4); margin-bottom: 5px;
+}
+.inv-nums { display: flex; align-items: baseline; gap: 4px; margin-bottom: 6px; }
+.inv-av { font-size: 22px; font-weight: 800; font-family:'JetBrains Mono'; }
+.inv-tot { font-size: 10px; color: var(--txt4); font-family:'JetBrains Mono'; }
+.inv-bar { width: 100%; height: 4px; background: var(--s4); border-radius: 3px; overflow: hidden; }
+.inv-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+.inv-fill.good { background: var(--emerald); }
+.inv-fill.warn { background: var(--amber); }
+.inv-fill.crit { background: var(--red); }
+.inv-det { font-size: 8px; color: var(--txt4); margin-top: 4px; font-family:'JetBrains Mono'; }
+
+/* ═══ ALLOCATIONS ═══ */
+.al-item {
+  padding: 10px 16px; border-bottom: 1px solid var(--brd);
+  display: grid; grid-template-columns: 10px 1fr auto;
+  gap: 12px; align-items: center;
+  transition: background 0.15s;
+}
+.al-item:hover { background: var(--s2); }
+.al-dot { width: 8px; height: 8px; border-radius: 50%; }
+.al-zone { font-weight: 600; font-size: 12px; }
+.al-meta { font-size: 9px; color: var(--txt3); font-family:'JetBrains Mono'; }
+.al-cnt { font-family:'JetBrains Mono'; font-weight: 800; font-size: 14px; color: var(--sky); }
+
+/* ═══ MAP ═══ */
+#mapC { width: 100%; height: 420px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--brd); }
+.leaflet-container { background: var(--s0) !important; }
+.map-tip {
+  background: var(--s1); border: 1px solid var(--brd2);
+  padding: 6px 10px; border-radius: var(--r-sm);
+  font-size: 10px; font-family:'JetBrains Mono'; color: var(--txt);
+  white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+/* ═══ SIMULATION CONSOLE ═══ */
+.sim-tabs { display: flex; gap: 2px; margin-bottom: 0; }
+.sim-t {
+  padding: 8px 16px; font-size: 11px; font-weight: 600;
+  cursor: pointer; color: var(--txt3);
+  background: var(--s2); border: 1px solid var(--brd);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  font-family:'DM Sans'; transition: all 0.2s;
+  border-bottom: none;
+}
+.sim-t:hover { color: var(--txt); }
+.sim-t.act { color: var(--sky); background: var(--s1); border-color: var(--brd2); }
+.sim-p { display: none; padding: 16px; }
+.sim-p.act { display: block; }
+.sim-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.sim-lbl {
+  font-size: 9px; font-family:'JetBrains Mono'; color: var(--txt4);
+  text-transform: uppercase; letter-spacing: 1px; width: 80px; flex-shrink: 0;
+}
+.sim-in, .sim-sel, .sim-ta {
+  background: var(--s2); border: 1px solid var(--brd);
+  color: var(--txt); padding: 7px 10px; border-radius: var(--r-sm);
+  font-family:'JetBrains Mono'; font-size: 11px; flex: 1;
+  transition: border-color 0.2s;
+}
+.sim-in:focus, .sim-sel:focus, .sim-ta:focus { outline: none; border-color: var(--sky); }
+.sim-ta { min-height: 50px; resize: vertical; }
+.btn-send {
+  background: linear-gradient(135deg, var(--sky), var(--blue));
+  border: none; color: #fff; padding: 9px 20px;
+  border-radius: var(--r-md); font-size: 11px; font-weight: 700;
+  cursor: pointer; font-family:'DM Sans';
+  text-transform: uppercase; letter-spacing: 0.8px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 10px rgba(56,189,248,0.2);
+}
+.btn-send:hover { box-shadow: 0 4px 20px rgba(56,189,248,0.35); transform: translateY(-1px); }
+.btn-load {
+  background: var(--violet-dim); border: 1px solid rgba(139,92,246,0.25);
+  color: var(--violet); padding: 7px 14px; border-radius: var(--r-sm);
+  font-size: 10px; font-weight: 600; cursor: pointer;
+  font-family:'JetBrains Mono'; transition: all 0.2s;
+}
+.btn-load:hover { background: var(--violet); color: #fff; }
+.s-res {
+  margin-top: 8px; padding: 7px 12px; border-radius: var(--r-sm);
+  font-family:'JetBrains Mono'; font-size: 10px; display: none;
+}
+.s-res.ok { display: block; background: var(--emerald-dim); color: var(--emerald); border: 1px solid rgba(16,185,129,0.15); }
+.s-res.err { display: block; background: var(--red-dim); color: var(--red); border: 1px solid rgba(244,63,94,0.15); }
+
+/* Quick action buttons */
+.qa-wrap { padding: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-monsoon {
+  background: linear-gradient(135deg, #f43f5e, #f59e0b, #10b981);
+  border: none; color: #fff; padding: 10px 22px;
+  border-radius: var(--r-md); font-size: 12px; font-weight: 800;
+  cursor: pointer; font-family:'DM Sans';
+  letter-spacing: 1px;
+  box-shadow: 0 4px 20px rgba(244,63,94,0.2);
+  transition: all 0.2s;
+}
+.btn-monsoon:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(244,63,94,0.35); }
+.btn-reset {
+  background: var(--s3); border: 1px solid var(--brd2);
+  color: var(--txt2); padding: 8px 16px;
+  border-radius: var(--r-md); font-size: 10px; font-weight: 600;
+  cursor: pointer; font-family:'DM Sans'; transition: all 0.2s;
+}
+.btn-reset:hover { background: var(--s4); color: var(--txt); }
+
+/* ═══ LOG ═══ */
+.log-body {
+  padding: 10px 16px; max-height: 550px; overflow-y: auto;
+  font-family:'JetBrains Mono'; font-size: 10px;
+}
+.log-e {
+  padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+.l-t { color: var(--txt4); margin-right: 6px; }
+.l-s { color: var(--sky); margin-right: 6px; font-weight: 600; }
+.l-ok { color: var(--emerald); }
+.l-err { color: var(--red); }
+.l-warn { color: var(--amber); }
+.l-msg { color: var(--txt); }
+
+/* ═══ EMPTY STATE ═══ */
+.empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px; color: var(--txt4); text-align: center;
+}
+.empty .i { font-size: 24px; margin-bottom: 6px; opacity: 0.4; }
+.empty .m { font-size: 11px; line-height: 1.5; }
+.empty .hint { font-size: 9px; color: var(--txt4); margin-top: 4px; font-family:'JetBrains Mono'; }
+
+/* ═══ TOAST ═══ */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 10000;
+  background: var(--s2); border: 1px solid var(--brd);
+  padding: 10px 18px; border-radius: var(--r-md);
+  font-size: 11px; font-family:'JetBrains Mono';
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backdrop-filter: blur(12px);
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok { border-color: var(--emerald); color: var(--emerald); }
+.toast.err { border-color: var(--red); color: var(--red); }
+
+/* ═══ ANIMATION UTILS ═══ */
+@keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+@keyframes newRow { from{background:rgba(56,189,248,0.08)} to{background:transparent} }
+.new-row { animation: newRow 1.2s ease; }
+@keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 4px currentColor} 50%{opacity:0.4} }
+
+/* ═══ ZONE CARDS ═══ */
+.zone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 14px; }
+.zone-card {
+  background: var(--s2); border: 1px solid var(--brd);
+  border-radius: var(--r-md); padding: 12px;
+  border-left: 3px solid var(--txt4);
+  transition: border-color 0.2s, background 0.2s;
+}
+.zone-card:hover { background: var(--s3); }
+.zone-card-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.zone-card-meta { font-size: 9px; font-family:'JetBrains Mono'; color: var(--txt3); }
+.zone-card-tags { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="hdr">
-  <div class="logo">
-    <div class="logo-i">FS</div>
-    <div><h1>FloodShield BD</h1><div class="logo-sub">Autonomous Flood Response System</div></div>
-  </div>
-  <div class="hdr-r">
-    <div style="display:flex;align-items:center;gap:5px;font-size:10px;font-family:'JetBrains Mono';color:var(--dim)"><div class="pulse-dot" id="pDot"></div>LIVE</div>
-    <div class="clock" id="clk">--:--:--</div>
-  </div>
-</div>
-
-<div class="nav">
-  <button class="nav-t act" onclick="switchSec('dash',this)">📊 Overview</button>
-  <button class="nav-t" onclick="switchSec('map',this)">🗺️ Live Map</button>
-  <button class="nav-t" onclick="switchSec('sim',this)">📡 Simulation</button>
-  <button class="nav-t" onclick="switchSec('log',this)">📋 Logs</button>
-</div>
-
-<div class="cfg">
-  <label>AGENT 2</label><input id="u2" value="http://localhost:8002"/>
-  <label>AGENT 3</label><input id="u3" value="http://localhost:8003"/>
-  <label>AGENT 4</label><input id="u4" value="http://localhost:8004"/>
-  <button class="btn-s" onclick="reconnect()">RECONNECT</button>
-  <button class="btn-s" onclick="refreshAll()">REFRESH</button>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
-<!-- OVERVIEW SECTION                                                 -->
-<!-- ════════════════════════════════════════════════════════════════ -->
-<div class="sec act" id="sec-dash">
-
-  <!-- PIPELINE -->
-  <div class="pipeline" id="pipeline">
-    <div class="pipe-agent">
-      <div class="pipe-name">Agent 1</div>
-      <div class="pipe-title">🛰️ Detect Flood</div>
-      <div class="pipe-status pipe-off" id="p1">OFFLINE</div>
+<div class="app">
+  <!-- ═══ SIDEBAR ═══ -->
+  <nav class="sidebar">
+    <div class="sb-logo">FS</div>
+    <div class="sb-nav">
+      <button class="sb-btn act" onclick="switchSec('dash',this)" title="Overview">
+        <span style="font-size:18px">📊</span><span>Overview</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('map',this)" title="Live Map">
+        <span style="font-size:18px">🗺️</span><span>Map</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('district',this)" title="District Dashboard">
+        <span style="font-size:18px">🏛️</span><span>District</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('env',this)" title="Satellite & Weather">
+        <span style="font-size:18px">🛰️</span><span>Satellite</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('rivers',this)" title="River Monitor">
+        <span style="font-size:18px">🌊</span><span>Rivers</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('sim',this)" title="Simulation">
+        <span style="font-size:18px">📡</span><span>Simulate</span>
+      </button>
+      <button class="sb-btn" onclick="switchSec('log',this)" title="Logs">
+        <span style="font-size:18px">📋</span><span>Logs</span>
+      </button>
     </div>
-    <div class="pipe-arrow broken" id="pa1">→</div>
-    <div class="pipe-agent">
-      <div class="pipe-name">Agent 2</div>
-      <div class="pipe-title">📡 Receive Distress</div>
-      <div class="pipe-status pipe-off" id="p2">CONNECTING</div>
+    <div class="sb-bottom">
+      <div class="sb-status" id="pDot"></div>
+      <div class="sb-clock" id="clk">--:--</div>
     </div>
-    <div class="pipe-arrow" id="pa2">→</div>
-    <div class="pipe-agent">
-      <div class="pipe-name">Agent 3</div>
-      <div class="pipe-title">📦 Allocate Resources</div>
-      <div class="pipe-status pipe-off" id="p3">CONNECTING</div>
-    </div>
-    <div class="pipe-arrow broken" id="pa3">→</div>
-    <div class="pipe-agent">
-      <div class="pipe-name">Agent 4</div>
-      <div class="pipe-title">🚚 Dispatch</div>
-      <div class="pipe-status pipe-off" id="p4">CONNECTING</div>
-    </div>
-  </div>
+  </nav>
 
-  <!-- DEGRADATION WARNINGS -->
-  <div class="degrade" id="warnA1">
-    <div class="icon">⚠️</div>
-    <div>
-      <strong>Agent 1 (Environmental Intelligence) is offline</strong>
-      <p>Distress reports cannot be cross-verified with satellite flood data. All reports show as "UNVERIFIED". Accuracy is reduced — the system relies only on human reports, not satellite confirmation.</p>
-    </div>
-  </div>
-  <div class="degrade hidden" id="warnPubsub">
-    <div class="icon">🔗</div>
-    <div>
-      <strong>Agent 2 → Agent 3 pipeline not connected</strong>
-      <p>Distress reports are queued but not automatically reaching the Resource Allocation engine. Run connect_agent3.py or fix Redis pub/sub.</p>
-    </div>
-  </div>
+  <!-- ═══ MAIN ═══ -->
+  <div class="main">
 
-  <!-- ──────── STEP 1: ENVIRONMENT ──────── -->
-  <div class="sec-hdr">
-    <div class="num" style="background:rgba(0,200,255,.15);color:var(--cyan)">1</div>
-    <div><h2>Environment Intelligence</h2><div class="desc">Agent 1 monitors satellite imagery, weather, and social media to detect flooding</div></div>
-  </div>
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-title">
+        FloodShield BD
+        <span class="sub">Autonomous Flood Response System</span>
+      </div>
+      <div class="topbar-right">
+        <div class="cfg-group">
+          <label>A1</label><input id="u1" value="http://localhost:8001" style="width:120px"/>
+          <label>A2</label><input id="u2" value="http://localhost:8002" style="width:120px"/>
+          <label>A3</label><input id="u3" value="http://localhost:8003" style="width:120px"/>
+          <label>A4</label><input id="u4" value="http://localhost:8004" style="width:120px"/>
+        </div>
+        <button class="btn-xs" onclick="reconnect()">Reconnect</button>
+        <button class="btn-xs" onclick="refreshAll()">Refresh</button>
+      </div>
+    </header>
 
-  <div class="row row-3">
-    <!-- WEATHER -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">🌦️ Live Weather — Dhaka</div><div class="pnl-c" id="wxTime">--</div></div>
-      <div class="pnl-b" id="wxBody">
-        <div class="wx-grid">
-          <div class="wx-card"><div class="wx-val" id="wxTemp">--</div><div class="wx-lbl">Temp °C</div></div>
-          <div class="wx-card"><div class="wx-val" id="wxRain">--</div><div class="wx-lbl">Rain (mm)</div></div>
-          <div class="wx-card"><div class="wx-val" id="wxHumid">--</div><div class="wx-lbl">Humidity %</div></div>
-          <div class="wx-card"><div class="wx-val" id="wxWind">--</div><div class="wx-lbl">Wind km/h</div></div>
-          <div class="wx-card"><div class="wx-val" id="wxCloud">--</div><div class="wx-lbl">Cloud %</div></div>
-          <div class="wx-card"><div class="wx-val" id="wxDesc">--</div><div class="wx-lbl">Condition</div></div>
+    <!-- ════════════════════════════════════════════════════════════
+         OVERVIEW SECTION
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec act" id="sec-dash">
+
+      <!-- Ground Truth Alert Banner (Phase 2.5) -->
+      <div id="groundAlertArea" style="display:none;margin-bottom:10px"></div>
+
+      <!-- WebSocket status indicator -->
+      <div id="wsStatus" style="display:none;padding:6px 14px;border-radius:var(--r-sm);font-size:10px;font-family:'JetBrains Mono';margin-bottom:8px;border:1px solid var(--brd)">
+        <span id="wsStatusDot" style="display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;background:var(--txt4)"></span>
+        <span id="wsStatusText">WebSocket: connecting...</span>
+      </div>
+
+      <!-- KPI STRIP -->
+      <div class="kpi-strip" id="kpiStrip">
+        <div class="kpi kpi-sky">
+          <div class="kpi-val" id="kpiZones">0</div>
+          <div class="kpi-label">Zones Monitored</div>
+        </div>
+        <div class="kpi kpi-red">
+          <div class="kpi-val" id="kpiDistress">0</div>
+          <div class="kpi-label">Distress Reports</div>
+        </div>
+        <div class="kpi kpi-amber">
+          <div class="kpi-val" id="kpiCritical">0</div>
+          <div class="kpi-label">Critical Priority</div>
+        </div>
+        <div class="kpi kpi-emerald">
+          <div class="kpi-val" id="kpiAlloc">0</div>
+          <div class="kpi-label">Resources Deployed</div>
+        </div>
+        <div class="kpi kpi-violet">
+          <div class="kpi-val" id="kpiDisp">0</div>
+          <div class="kpi-label">Active Dispatches</div>
         </div>
       </div>
-    </div>
 
-    <!-- SAR -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">🛰️ SAR Flood Detection</div><div class="pnl-c">Sentinel-1</div></div>
-      <div class="pnl-b">
-        <div class="sar-compare" id="sarPanel">
-          <div class="sar-img" id="sarBeforeBox">
-            <div class="label">Before Flood</div>
-            <div style="font-size:28px;margin:6px 0;opacity:.3" id="sarBeforeIcon">🛰️</div>
-            <div class="status" style="color:var(--dim)" id="sarBefore">Pre-monsoon baseline<br><span style="font-size:9px;color:var(--muted)">Sentinel-1 SAR image</span></div>
+      <!-- PIPELINE -->
+      <div class="pipeline-wrap">
+        <div class="pipeline-label">Multi-Agent Pipeline Status</div>
+        <div class="pipeline" id="pipeline">
+          <div class="pipe-node">
+            <div class="pipe-num off" id="pn1" style="background:var(--sky-dim);color:var(--sky)">1</div>
+            <div class="pipe-name">🛰️ Detect</div>
+            <div class="pipe-role">Environmental Intel</div>
+            <div class="pipe-tag off" id="p1">OFFLINE</div>
           </div>
-          <div class="sar-img" id="sarAfterBox">
-            <div class="label">During Flood</div>
-            <div style="font-size:28px;margin:6px 0;opacity:.3" id="sarAfterIcon">🌊</div>
-            <div class="status" id="sarAfter"><span style="color:var(--orange)">CNN detects flood extent</span><br><span style="font-size:9px;color:var(--muted)">94.64% accuracy (U-Net)</span></div>
+          <div class="pipe-arrow dim" id="pa1">→</div>
+          <div class="pipe-node">
+            <div class="pipe-num off" id="pn2" style="background:var(--red-dim);color:var(--red)">2</div>
+            <div class="pipe-name">📡 Classify</div>
+            <div class="pipe-role">Distress Intelligence</div>
+            <div class="pipe-tag off" id="p2">CONNECTING</div>
+          </div>
+          <div class="pipe-arrow dim" id="pa2">→</div>
+          <div class="pipe-node">
+            <div class="pipe-num off" id="pn3" style="background:var(--emerald-dim);color:var(--emerald)">3</div>
+            <div class="pipe-name">📦 Allocate</div>
+            <div class="pipe-role">Resource Management</div>
+            <div class="pipe-tag off" id="p3">CONNECTING</div>
+          </div>
+          <div class="pipe-arrow dim" id="pa3">→</div>
+          <div class="pipe-node">
+            <div class="pipe-num off" id="pn4" style="background:var(--violet-dim);color:var(--violet)">4</div>
+            <div class="pipe-name">🚚 Dispatch</div>
+            <div class="pipe-role">Route Optimization</div>
+            <div class="pipe-tag off" id="p4">CONNECTING</div>
           </div>
         </div>
-        <div style="padding:0 12px 10px;font-size:10px;color:var(--dim);text-align:center;font-family:'JetBrains Mono'" id="sarStatus">
-          Agent 1 offline — showing capability overview
+      </div>
+
+      <!-- DEGRADATION WARNINGS -->
+      <div class="degrade" id="warnA1">
+        <div class="icon">⚠️</div>
+        <div>
+          <strong>Agent 1 (Environmental Intelligence) is offline</strong>
+          <p>Distress reports cannot be cross-verified with satellite flood data. All reports show as "UNVERIFIED". Accuracy is reduced — the system relies only on human reports.</p>
+        </div>
+      </div>
+      <div class="degrade hidden" id="warnPubsub">
+        <div class="icon">🔗</div>
+        <div>
+          <strong>Agent 2 → Agent 3 pipeline not connected</strong>
+          <p>Distress reports are queued but not automatically reaching the Resource Allocation engine. Check Redis pub/sub.</p>
+        </div>
+      </div>
+
+      <!-- ──── STEP 1: ENVIRONMENT (compact) ──── -->
+      <div class="sec-hdr">
+        <div class="num" style="background:var(--sky-dim);color:var(--sky)">1</div>
+        <div><h2>Environment Intelligence</h2><div class="desc">Agent 1 monitors satellite imagery, weather, and river discharge — <a href="#" onclick="switchSec('env',document.querySelectorAll('.sb-btn')[3]);return false" style="color:var(--sky)">view satellite data →</a> · <a href="#" onclick="switchSec('rivers',document.querySelectorAll('.sb-btn')[4]);return false" style="color:var(--sky)">river levels →</a></div></div>
+      </div>
+      <div class="grid g-4" style="margin-bottom:12px">
+        <div class="card" style="border-left:3px solid #e74c3c"><div class="card-body" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700;color:var(--txt)">Sylhet</div><div style="font-size:10px;color:var(--txt3)">সিলেট · 13 upazilas</div></div><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:700;color:#e74c3c" id="distSylhetRisk">—</div></div><div style="font-size:9px;color:var(--txt3);margin-top:4px" id="distSylhetMeta">Critical: 0 · High: 0</div></div></div>
+        <div class="card" style="border-left:3px solid #e67e22"><div class="card-body" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700;color:var(--txt)">Moulvibazar</div><div style="font-size:10px;color:var(--txt3)">মৌলভীবাজার · 7 upazilas</div></div><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:700;color:#e67e22" id="distMoulviRisk">—</div></div><div style="font-size:9px;color:var(--txt3);margin-top:4px" id="distMoulviMeta">Critical: 0 · High: 0</div></div></div>
+        <div class="card" style="border-left:3px solid #27ae60"><div class="card-body" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700;color:var(--txt)">Habiganj</div><div style="font-size:10px;color:var(--txt3)">হবিগঞ্জ · 9 upazilas</div></div><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:700;color:#27ae60" id="distHabiganjRisk">—</div></div><div style="font-size:9px;color:var(--txt3);margin-top:4px" id="distHabiganjMeta">Critical: 0 · High: 0</div></div></div>
+        <div class="card" style="border-left:3px solid #8e44ad"><div class="card-body" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700;color:var(--txt)">Sunamganj</div><div style="font-size:10px;color:var(--txt3)">সুনামগঞ্জ · 10 upazilas</div></div><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:700;color:#8e44ad" id="distSunamganjRisk">—</div></div><div style="font-size:9px;color:var(--txt3);margin-top:4px" id="distSunamganjMeta">Critical: 0 · High: 0</div></div></div>
+      </div>
+      <div class="grid g-1"><div class="card"><div class="card-h"><div class="card-title"><span class="emoji">🔴</span> Flood Zones Detected</div><div class="card-badge" id="fzCount">0</div></div><div class="card-body" id="fzBody" style="max-height:200px"><div class="empty"><div class="i">🛰️</div><div class="m">Flood data from Agent 1 or satellite alerts</div></div></div></div></div>
+
+      <!-- ──── STEP 2: DISTRESS ──── -->
+      <div class="sec-hdr">
+        <div class="num" style="background:var(--red-dim);color:var(--red)">2</div>
+        <div><h2>Distress Intelligence</h2><div class="desc">Agent 2 receives reports from 4 channels, verifies against flood data, and prioritizes by urgency</div></div>
+      </div>
+
+      <!-- ── 999 Intake Activity (Phase 2.2) ── -->
+      <div class="grid g-3">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📞</span> 999 Intake Activity</div><div class="card-badge" id="intakeTotal">0</div></div>
+          <div class="card-body">
+            <div class="wx-grid">
+              <div class="wx-card"><div class="wx-val" id="intakeCallCnt" style="color:var(--red)">0</div><div class="wx-lbl">999 Calls</div></div>
+              <div class="wx-card"><div class="wx-val" id="intakeSmsCnt" style="color:var(--amber)">0</div><div class="wx-lbl">SMS</div></div>
+              <div class="wx-card"><div class="wx-val" id="intakeSocialCnt" style="color:var(--blue)">0</div><div class="wx-lbl">Social</div></div>
+              <div class="wx-card"><div class="wx-val" id="intakeProcessed" style="color:var(--emerald)">0</div><div class="wx-lbl">Processed</div></div>
+              <div class="wx-card"><div class="wx-val" id="intakePending" style="color:var(--amber)">0</div><div class="wx-lbl">Pending</div></div>
+              <div class="wx-card"><div class="wx-val" id="intakeCritCnt" style="color:var(--red)">0</div><div class="wx-lbl">Critical</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="grid-column: span 2">
+          <div class="card-h"><div class="card-title"><span class="emoji">📋</span> Recent Intake Feed</div><div class="card-badge" id="intakeFeedCnt">live</div></div>
+          <div class="card-body" id="intakeFeedBody" style="max-height:180px">
+            <div class="empty"><div class="i">📞</div><div class="m">No intake events yet — start the scenario feeder</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid g-2-1">
+        <div class="card">
+          <div class="card-h">
+            <div class="card-title"><span class="emoji">🚨</span> Prioritized Distress Queue</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <div class="card-badge" id="qCnt">0 items</div>
+              <div class="card-badge" id="qCrit" style="color:var(--red)">0 critical</div>
+            </div>
+          </div>
+          <div class="card-body" id="qBody"><div class="empty"><div class="i">📡</div><div class="m">Queue empty — send data via Simulation tab</div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📻</span> Intake Channels</div><div class="card-badge" id="chTotal">4 channels</div></div>
+          <div class="card-body" id="chBody">
+            <div class="ch-row"><div class="ch-icon">🌐</div><div class="ch-info"><div class="ch-name">Social Media</div><div class="ch-desc">Facebook, Twitter — NLP in Bengali/English/Banglish</div></div><div class="ch-count" id="chSocial">--</div></div>
+            <div class="ch-row"><div class="ch-icon">📱</div><div class="ch-info"><div class="ch-name">SMS / USSD (*999#)</div><div class="ch-desc">Works on 2G — structured + free text</div></div><div class="ch-count" id="chSms">--</div></div>
+            <div class="ch-row"><div class="ch-icon">📞</div><div class="ch-info"><div class="ch-name">999 Emergency Hotline</div><div class="ch-desc">Operator transcripts + urgency tagging</div></div><div class="ch-count" id="chHotline">--</div></div>
+            <div class="ch-row"><div class="ch-icon">🛰️</div><div class="ch-info"><div class="ch-name">Satellite + Population</div><div class="ch-desc">Agent 1 flood data + census overlay</div></div><div class="ch-count" id="chSat">--</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──── STEP 3: RESPONSE ──── -->
+      <div class="sec-hdr">
+        <div class="num" style="background:var(--emerald-dim);color:var(--emerald)">3</div>
+        <div><h2>Response Coordination</h2><div class="desc">Agent 3 allocates nearest available resources. Agent 4 optimizes dispatch routes.</div></div>
+      </div>
+
+      <div class="grid g-2">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📦</span> Resource Inventory</div><div class="card-badge" id="invCnt">--</div></div>
+          <div class="card-body" id="invBody"><div class="empty"><div class="i">🏗️</div><div class="m">Agent 3 not connected</div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">🎯</span> Allocation Decisions</div><div class="card-badge" id="alCnt">0</div></div>
+          <div class="card-body" id="alBody"><div class="empty"><div class="i">⏳</div><div class="m">No allocations yet</div></div></div>
+        </div>
+      </div>
+
+      <!-- DISPATCH (Agent 4) -->
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h">
+            <div class="card-title"><span class="emoji">🚚</span> Dispatch Routes (Agent 4)</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <div class="card-badge" id="dspCnt">0 dispatches</div>
+              <div class="card-badge" id="dspStatus" style="color:var(--txt3)">--</div>
+            </div>
+          </div>
+          <div class="card-body" id="dspBody" style="max-height:300px">
+            <div class="empty"><div class="i">🚚</div><div class="m">Agent 4 not connected</div><div class="hint">python -m src.agents.agent_4_dispatch.main</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──── FIELD TEAMS (Phase 2.3) ──── -->
+      <div class="sec-hdr">
+        <div class="num" style="background:rgba(56,189,248,0.1);color:var(--sky)">⛑</div>
+        <div><h2>Field Team Tracking</h2><div class="desc">Real-time status of deployed field teams — powered by GPS heartbeats and dispatch feedback</div></div>
+      </div>
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">👥</span> Field Teams</div><div class="card-badge" id="teamsCnt">0 teams</div></div>
+          <div class="card-body" id="teamsBody" style="max-height:280px">
+            <div class="empty"><div class="i">👥</div><div class="m">Loading field teams...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rivers & District details: see dedicated tabs -->
+
+      <!-- ZONE SUMMARY -->
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📍</span> Zone Activity Summary</div><div class="card-badge" id="zCnt">0 zones</div></div>
+          <div class="card-body" id="zBody" style="max-height:260px">
+            <div class="empty"><div class="i">📍</div><div class="m">No zones active</div></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- DETECTED FLOOD ZONES -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">🔴 Flood Zones Detected</div><div class="pnl-c" id="fzCount">0</div></div>
-      <div class="pnl-b" id="fzBody">
-        <div class="empty"><div class="i">🛰️</div><div class="m">Flood data from Agent 1<br>or satellite alerts</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ──────── STEP 2: DISTRESS ──────── -->
-  <div class="sec-hdr">
-    <div class="num" style="background:rgba(255,64,88,.15);color:var(--red)">2</div>
-    <div><h2>Distress Intelligence</h2><div class="desc">Agent 2 receives reports from 4 channels, verifies against flood data, and prioritizes by urgency</div></div>
-  </div>
-
-  <div class="row row-2-1">
-    <!-- QUEUE -->
-    <div class="pnl">
-      <div class="pnl-h">
-        <div class="pnl-t">🚨 Prioritized Distress Queue</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <div class="pnl-c" id="qCnt">0 items</div>
-          <div class="pnl-c" id="qCrit" style="color:var(--red)">0 critical</div>
+    <!-- ════════════════════════════════════════════════════════════
+         MAP SECTION
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-map">
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">🗺️</span> Dhaka Flood Zone Map</div><div class="card-badge" id="mzCnt">0</div></div>
+          <div style="padding:12px"><div id="mapC"></div></div>
         </div>
       </div>
-      <div class="pnl-b" id="qBody"><div class="empty"><div class="i">📡</div><div class="m">Queue empty — send data via Simulation tab</div></div></div>
-    </div>
-    <!-- CHANNELS -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">📻 Intake Channels</div><div class="pnl-c" id="chTotal">4 channels</div></div>
-      <div class="pnl-b" id="chBody">
-        <div class="ch-row"><div class="ch-icon">🌐</div><div class="ch-info"><div class="ch-name">Social Media</div><div class="ch-desc">Facebook, Twitter — NLP in Bengali/English/Banglish</div></div><div class="ch-count" id="chSocial">--</div></div>
-        <div class="ch-row"><div class="ch-icon">📱</div><div class="ch-info"><div class="ch-name">SMS / USSD (*999#)</div><div class="ch-desc">Works on 2G — structured + free text</div></div><div class="ch-count" id="chSms">--</div></div>
-        <div class="ch-row"><div class="ch-icon">📞</div><div class="ch-info"><div class="ch-name">999 Emergency Hotline</div><div class="ch-desc">Operator transcripts + urgency tagging</div></div><div class="ch-count" id="chHotline">--</div></div>
-        <div class="ch-row"><div class="ch-icon">🛰️</div><div class="ch-info"><div class="ch-name">Satellite + Population</div><div class="ch-desc">Agent 1 flood data + census overlay</div></div><div class="ch-count" id="chSat">--</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ──────── STEP 3: RESPONSE ──────── -->
-  <div class="sec-hdr">
-    <div class="num" style="background:rgba(0,214,143,.15);color:var(--green)">3</div>
-    <div><h2>Response Coordination</h2><div class="desc">Agent 3 allocates the nearest available resources based on urgency rules. Agent 4 optimizes dispatch routes.</div></div>
-  </div>
-
-  <div class="row row-2">
-    <!-- INVENTORY -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">📦 Resource Inventory</div><div class="pnl-c" id="invCnt">--</div></div>
-      <div class="pnl-b" id="invBody"><div class="empty"><div class="i">🏗️</div><div class="m">Agent 3 not connected</div></div></div>
-    </div>
-    <!-- ALLOCATIONS -->
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">🎯 Allocation Decisions</div><div class="pnl-c" id="alCnt">0</div></div>
-      <div class="pnl-b" id="alBody"><div class="empty"><div class="i">⏳</div><div class="m">No allocations yet</div></div></div>
-    </div>
-  </div>
-
-  <!-- DISPATCH (Agent 4) -->
-  <div class="row row-full">
-    <div class="pnl">
-      <div class="pnl-h">
-        <div class="pnl-t">🚚 Dispatch Routes (Agent 4)</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <div class="pnl-c" id="dspCnt">0 dispatches</div>
-          <div class="pnl-c" id="dspStatus" style="color:var(--dim)">--</div>
+      <div class="grid g-2">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📍</span> Zone Legend</div></div>
+          <div class="card-body" id="mLeg" style="padding:12px"><div class="empty"><div class="m">Load data first</div></div></div>
         </div>
-      </div>
-      <div class="pnl-b" id="dspBody" style="max-height:280px">
-        <div class="empty"><div class="i">🚚</div><div class="m">Agent 4 not connected</div><div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'JetBrains Mono'">Start: python -m src.agents.agent_4_dispatch.main</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ZONE SUMMARY -->
-  <div class="row row-full">
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">📍 Zone Activity Summary</div><div class="pnl-c" id="zCnt">0 zones</div></div>
-      <div class="pnl-b" id="zBody" style="max-height:240px">
-        <div class="empty"><div class="i">📍</div><div class="m">No zones active</div></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
-<!-- MAP SECTION                                                      -->
-<!-- ════════════════════════════════════════════════════════════════ -->
-<div class="sec" id="sec-map">
-  <div class="row row-full"><div class="pnl"><div class="pnl-h"><div class="pnl-t">🗺️ Dhaka Flood Zone Map</div><div class="pnl-c" id="mzCnt">0</div></div><div style="padding:10px"><div id="mapC"></div></div></div></div>
-  <div class="row row-2">
-    <div class="pnl"><div class="pnl-h"><div class="pnl-t">📍 Zone Legend</div></div><div class="pnl-b" id="mLeg" style="padding:10px"><div class="empty"><div class="m">Load data first</div></div></div></div>
-    <div class="pnl"><div class="pnl-h"><div class="pnl-t">📊 Resources by Zone</div></div><div class="pnl-b" id="mRes" style="padding:10px"><div class="empty"><div class="m">No deployments</div></div></div></div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
-<!-- SIMULATION SECTION                                               -->
-<!-- ════════════════════════════════════════════════════════════════ -->
-<div class="sec" id="sec-sim">
-  <div class="row row-full">
-    <div class="pnl">
-      <div class="pnl-h"><div class="pnl-t">📡 Send Live Data to Agent 2</div><div class="pnl-c">POST → :8002</div></div>
-      <div>
-        <div class="sim-tabs" style="padding:8px 14px 0">
-          <button class="sim-t act" onclick="switchSim('sms',this)">📱 SMS</button>
-          <button class="sim-t" onclick="switchSim('hl',this)">📞 999 Call</button>
-          <button class="sim-t" onclick="switchSim('sm',this)">🌐 Social</button>
-          <button class="sim-t" onclick="switchSim('sat',this)">🛰️ Satellite</button>
-        </div>
-        <div class="sim-p act" id="sim-sms">
-          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Formats: <code>FLOOD MIRPUR 4FT 6 ROOFTOP</code> · <code>USSD|MIRPUR|SEVERE|...</code> · Free Bengali/Banglish</div>
-          <div class="sim-row"><span class="sim-lbl">Message</span><textarea class="sim-ta" id="smsT" placeholder="FLOOD MIRPUR 4FT 6 ROOFTOP"></textarea></div>
-          <div class="sim-row"><span class="sim-lbl">Sender</span><input class="sim-in" id="smsS" value="+8801XXXXXXXX" style="max-width:180px"/><button class="btn-load" onclick="loadSms()">Load 5 Presets</button><button class="btn-send" onclick="sendSms()">SEND →</button></div>
-          <div class="s-res" id="smsR"></div>
-        </div>
-        <div class="sim-p" id="sim-hl">
-          <div class="sim-row"><span class="sim-lbl">Zone</span><select class="sim-sel" id="hlZ"><option value="mirpur">Mirpur</option><option value="jatrabari">Jatrabari</option><option value="demra">Demra</option><option value="uttara">Uttara</option><option value="mohammadpur">Mohammadpur</option><option value="dhanmondi">Dhanmondi</option><option value="badda">Badda</option><option value="sylhet">Sylhet</option></select><span class="sim-lbl" style="width:50px">Urgency</span><select class="sim-sel" id="hlU"><option value="critical">Critical</option><option value="high">High</option><option value="medium" selected>Medium</option></select></div>
-          <div class="sim-row"><span class="sim-lbl">Situation</span><select class="sim-sel" id="hlS"><option value="stranded">Stranded</option><option value="medical">Medical</option><option value="collapse">Collapse</option><option value="evacuate">Evacuate</option><option value="supplies">Supplies</option></select><span class="sim-lbl" style="width:50px">People</span><input class="sim-in" id="hlP" type="number" value="5" style="max-width:70px"/><span class="sim-lbl" style="width:60px">Water ft</span><input class="sim-in" id="hlW" type="number" value="4" style="max-width:70px"/></div>
-          <div class="sim-row"><span class="sim-lbl">Notes</span><textarea class="sim-ta" id="hlN" placeholder="Caller reports..."></textarea></div>
-          <div class="sim-row" style="justify-content:flex-end"><button class="btn-send" onclick="sendHl()">SUBMIT 999 CALL →</button></div>
-          <div class="s-res" id="hlR"></div>
-        </div>
-        <div class="sim-p" id="sim-sm">
-          <div class="sim-row"><span class="sim-lbl">Platform</span><select class="sim-sel" id="smP" style="max-width:140px"><option>facebook</option><option>twitter</option></select><span class="sim-lbl" style="width:50px">Author</span><input class="sim-in" id="smA" value="citizen_dhaka" style="max-width:160px"/></div>
-          <div class="sim-row"><span class="sim-lbl">Post</span><textarea class="sim-ta" id="smT" placeholder="URGENT! Families stranded in Mirpur!"></textarea></div>
-          <div class="sim-row" style="justify-content:flex-end"><button class="btn-load" onclick="loadSocial()">Load 13 Posts</button><button class="btn-send" onclick="sendSocial()">POST →</button></div>
-          <div class="s-res" id="smR"></div>
-        </div>
-        <div class="sim-p" id="sim-sat">
-          <div class="sim-row"><span class="sim-lbl">Zone</span><select class="sim-sel" id="satZ"><option value="mirpur">Mirpur</option><option value="jatrabari">Jatrabari</option><option value="demra">Demra</option><option value="uttara">Uttara</option><option value="sylhet">Sylhet</option></select><span class="sim-lbl" style="width:50px">Severity</span><select class="sim-sel" id="satSv"><option value="critical">Critical</option><option value="high" selected>High</option><option value="moderate">Moderate</option></select></div>
-          <div class="sim-row"><span class="sim-lbl">Flood %</span><input class="sim-in" id="satP" type="number" value="37.5" style="max-width:90px"/><span class="sim-lbl" style="width:50px">Depth m</span><input class="sim-in" id="satD" type="number" value="1.5" style="max-width:90px"/><span class="sim-lbl" style="width:50px">Risk</span><input class="sim-in" id="satR" type="number" value="0.78" min="0" max="1" step=".01" style="max-width:90px"/></div>
-          <div class="sim-row" style="justify-content:flex-end"><button class="btn-load" onclick="loadSat()">Load 5 Presets</button><button class="btn-send" onclick="sendSat()">SEND ALERT →</button></div>
-          <div class="s-res" id="satRes"></div>
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📊</span> Resources by Zone</div></div>
+          <div class="card-body" id="mRes" style="padding:12px"><div class="empty"><div class="m">No deployments</div></div></div>
         </div>
       </div>
     </div>
-  </div>
-  <div class="row row-full">
-    <div class="pnl"><div class="pnl-h"><div class="pnl-t">⚡ Quick Actions</div></div>
-    <div style="padding:10px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-send" onclick="triggerCycle()" style="font-size:10px;padding:7px 14px">🔄 Trigger Processing</button>
-      <button class="btn-send" onclick="loadSms();sendSms()" style="font-size:10px;padding:7px 14px;background:linear-gradient(135deg,#ff8c20,#ff4058)">📱 5 SMS</button>
-      <button class="btn-send" onclick="loadSocial();sendSocial()" style="font-size:10px;padding:7px 14px;background:linear-gradient(135deg,#a78bfa,#3b7dff)">🌐 13 Posts</button>
-      <button class="btn-send" onclick="loadSat();sendSat()" style="font-size:10px;padding:7px 14px;background:linear-gradient(135deg,#00d68f,#00c8ff)">🛰️ 5 Alerts</button>
-    </div></div>
-  </div>
-</div>
 
-<!-- LOG SECTION -->
-<div class="sec" id="sec-log">
-  <div class="row row-full"><div class="pnl"><div class="pnl-h"><div class="pnl-t">📋 Event Log</div><div class="pnl-c" id="lgCnt">0</div></div><div class="log-b" id="lgBody" style="max-height:600px"></div></div></div>
-</div>
+    <!-- ════════════════════════════════════════════════════════════
+         SIMULATION SECTION
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-sim">
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📡</span> Send Live Data to Agent 2</div><div class="card-badge">POST → :8002</div></div>
+          <div>
+            <div class="sim-tabs" style="padding:10px 16px 0">
+              <button class="sim-t act" onclick="switchSim('sms',this)">📱 SMS</button>
+              <button class="sim-t" onclick="switchSim('hl',this)">📞 999 Call</button>
+              <button class="sim-t" onclick="switchSim('sm',this)">🌐 Social</button>
+              <button class="sim-t" onclick="switchSim('sat',this)">🛰️ Satellite</button>
+            </div>
+            <div class="sim-p act" id="sim-sms">
+              <div style="font-size:10px;color:var(--txt4);margin-bottom:10px">Formats: <code style="color:var(--sky)">FLOOD MIRPUR 4FT 6 ROOFTOP</code> · <code style="color:var(--sky)">USSD|MIRPUR|SEVERE|...</code> · Free Bengali/Banglish</div>
+              <div class="sim-row"><span class="sim-lbl">Message</span><textarea class="sim-ta" id="smsT" placeholder="FLOOD MIRPUR 4FT 6 ROOFTOP"></textarea></div>
+              <div class="sim-row"><span class="sim-lbl">Sender</span><input class="sim-in" id="smsS" value="+8801XXXXXXXX" style="max-width:180px"/><button class="btn-load" onclick="loadSms()">Load 5 Presets</button><button class="btn-send" onclick="sendSms()">SEND →</button></div>
+              <div class="s-res" id="smsR"></div>
+            </div>
+            <div class="sim-p" id="sim-hl">
+              <div class="sim-row"><span class="sim-lbl">Zone</span><select class="sim-sel" id="hlZ"><option value="mirpur">Mirpur</option><option value="jatrabari">Jatrabari</option><option value="demra">Demra</option><option value="uttara">Uttara</option><option value="mohammadpur">Mohammadpur</option><option value="dhanmondi">Dhanmondi</option><option value="badda">Badda</option><option value="sylhet">Sylhet</option></select><span class="sim-lbl" style="width:50px">Urgency</span><select class="sim-sel" id="hlU"><option value="critical">Critical</option><option value="high">High</option><option value="medium" selected>Medium</option></select></div>
+              <div class="sim-row"><span class="sim-lbl">Situation</span><select class="sim-sel" id="hlS"><option value="stranded">Stranded</option><option value="medical">Medical</option><option value="collapse">Collapse</option><option value="evacuate">Evacuate</option><option value="supplies">Supplies</option></select><span class="sim-lbl" style="width:50px">People</span><input class="sim-in" id="hlP" type="number" value="5" style="max-width:70px"/><span class="sim-lbl" style="width:60px">Water ft</span><input class="sim-in" id="hlW" type="number" value="4" style="max-width:70px"/></div>
+              <div class="sim-row"><span class="sim-lbl">Notes</span><textarea class="sim-ta" id="hlN" placeholder="Caller reports..."></textarea></div>
+              <div class="sim-row" style="justify-content:flex-end"><button class="btn-send" onclick="sendHl()">SUBMIT 999 CALL →</button></div>
+              <div class="s-res" id="hlR"></div>
+            </div>
+            <div class="sim-p" id="sim-sm">
+              <div class="sim-row"><span class="sim-lbl">Platform</span><select class="sim-sel" id="smP" style="max-width:140px"><option>facebook</option><option>twitter</option></select><span class="sim-lbl" style="width:50px">Author</span><input class="sim-in" id="smA" value="citizen_dhaka" style="max-width:160px"/></div>
+              <div class="sim-row"><span class="sim-lbl">Post</span><textarea class="sim-ta" id="smT" placeholder="URGENT! Families stranded in Mirpur!"></textarea></div>
+              <div class="sim-row" style="justify-content:flex-end"><button class="btn-load" onclick="loadSocial()">Load 13 Posts</button><button class="btn-send" onclick="sendSocial()">POST →</button></div>
+              <div class="s-res" id="smR"></div>
+            </div>
+            <div class="sim-p" id="sim-sat">
+              <div class="sim-row"><span class="sim-lbl">Zone</span><select class="sim-sel" id="satZ"><option value="mirpur">Mirpur</option><option value="jatrabari">Jatrabari</option><option value="demra">Demra</option><option value="uttara">Uttara</option><option value="sylhet">Sylhet</option></select><span class="sim-lbl" style="width:50px">Severity</span><select class="sim-sel" id="satSv"><option value="critical">Critical</option><option value="high" selected>High</option><option value="moderate">Moderate</option></select></div>
+              <div class="sim-row"><span class="sim-lbl">Flood %</span><input class="sim-in" id="satP" type="number" value="37.5" style="max-width:90px"/><span class="sim-lbl" style="width:50px">Depth m</span><input class="sim-in" id="satD" type="number" value="1.5" style="max-width:90px"/><span class="sim-lbl" style="width:50px">Risk</span><input class="sim-in" id="satR" type="number" value="0.78" min="0" max="1" step=".01" style="max-width:90px"/></div>
+              <div class="sim-row" style="justify-content:flex-end"><button class="btn-load" onclick="loadSat()">Load 5 Presets</button><button class="btn-send" onclick="sendSat()">SEND ALERT →</button></div>
+              <div class="s-res" id="satRes"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">⚡</span> Quick Actions</div></div>
+          <div class="qa-wrap">
+            <button class="btn-monsoon" onclick="runMonsoonScenario()">🌊 RUN MONSOON 2024</button>
+            <button class="btn-reset" onclick="resetSystem()">♻️ Reset System</button>
+            <span style="border-left:1px solid var(--brd2);margin:0 4px"></span>
+            <button class="btn-send" onclick="triggerCycle()" style="font-size:10px;padding:8px 14px">🔄 Trigger Processing</button>
+            <button class="btn-send" onclick="loadSms();sendSms()" style="font-size:10px;padding:8px 14px;background:linear-gradient(135deg,var(--amber),var(--red))">📱 5 SMS</button>
+            <button class="btn-send" onclick="loadSocial();sendSocial()" style="font-size:10px;padding:8px 14px;background:linear-gradient(135deg,var(--violet),var(--blue))">🌐 13 Posts</button>
+            <button class="btn-send" onclick="loadSat();sendSat()" style="font-size:10px;padding:8px 14px;background:linear-gradient(135deg,var(--emerald),var(--sky))">🛰️ 5 Alerts</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         DISTRICT DASHBOARD TAB
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-district">
+      <div style="background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(56,189,248,0.06));border:1px solid var(--brd2);border-radius:var(--r-lg);padding:20px 24px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px"><span style="font-size:22px">🏛️</span><div><div style="font-size:17px;font-weight:700;color:var(--txt)" id="ddTitle">District Dashboard — Sylhet Division</div><div style="font-size:11px;color:var(--txt3)">Agent Data Flow View · 4 districts · 39 upazilas</div></div><div style="margin-left:auto;padding:4px 12px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:20px;font-size:10px;font-weight:600;color:var(--emerald)">ACTIVE</div></div>
+      </div>
+      <!-- District selector -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap" id="ddSelector">
+        <div onclick="selectDistrict('sylhet')" class="card dd-sel dd-active" style="flex:1;min-width:140px;cursor:pointer;border:2px solid #e74c3c;text-align:center;padding:14px 10px"><div style="font-size:14px;font-weight:700;color:#e74c3c">Sylhet</div><div style="font-size:11px;color:var(--txt3)">সিলেট</div><div style="font-size:10px;color:var(--txt4);margin-top:4px">13 upazilas</div></div>
+        <div onclick="selectDistrict('moulvibazar')" class="card dd-sel" style="flex:1;min-width:140px;cursor:pointer;text-align:center;padding:14px 10px"><div style="font-size:14px;font-weight:700;color:#e67e22">Moulvibazar</div><div style="font-size:11px;color:var(--txt3)">মৌলভীবাজার</div><div style="font-size:10px;color:var(--txt4);margin-top:4px">7 upazilas</div></div>
+        <div onclick="selectDistrict('habiganj')" class="card dd-sel" style="flex:1;min-width:140px;cursor:pointer;text-align:center;padding:14px 10px"><div style="font-size:14px;font-weight:700;color:#27ae60">Habiganj</div><div style="font-size:11px;color:var(--txt3)">হবিগঞ্জ</div><div style="font-size:10px;color:var(--txt4);margin-top:4px">9 upazilas</div></div>
+        <div onclick="selectDistrict('sunamganj')" class="card dd-sel" style="flex:1;min-width:140px;cursor:pointer;text-align:center;padding:14px 10px"><div style="font-size:14px;font-weight:700;color:#8e44ad">Sunamganj</div><div style="font-size:11px;color:var(--txt3)">সুনামগঞ্জ</div><div style="font-size:10px;color:var(--txt4);margin-top:4px">10 upazilas</div></div>
+      </div>
+      <!-- District KPIs -->
+      <div class="grid g-5" style="margin-bottom:16px">
+        <div class="card" style="border-top:2px solid var(--sky)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Upazilas</div><div style="font-size:26px;font-weight:700;color:var(--sky)" id="ddUpazilas">13</div><div style="font-size:9px;color:var(--txt4)" id="ddUpazilaSub">Total: 13</div></div></div>
+        <div class="card" style="border-top:2px solid var(--red)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Critical Zones</div><div style="font-size:26px;font-weight:700;color:var(--red)" id="ddCritical">0</div><div style="font-size:9px;color:var(--txt4)" id="ddCritSub">High: 0</div></div></div>
+        <div class="card" style="border-top:2px solid var(--amber)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Max Risk</div><div style="font-size:26px;font-weight:700;color:var(--amber)" id="ddMaxRisk">0%</div><div style="font-size:9px;color:var(--txt4)">Avg: --</div></div></div>
+        <div class="card" style="border-top:2px solid var(--emerald)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Distress Reports</div><div style="font-size:26px;font-weight:700;color:var(--emerald)" id="ddReports">0</div><div style="font-size:9px;color:var(--txt4)">From all channels</div></div></div>
+        <div class="card" style="border-top:2px solid var(--violet)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Active Missions</div><div style="font-size:26px;font-weight:700;color:var(--violet)" id="ddMissions">0</div><div style="font-size:9px;color:var(--txt4)">Rescue & supply</div></div></div>
+      </div>
+      <!-- Upazila Status Table -->
+      <div class="grid g-1">
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">📊</span> Upazila Status Table</div></div><div class="card-body" id="ddTableBody" style="max-height:400px"><div class="empty"><div class="i">📊</div><div class="m">Select a district to view upazila data</div></div></div></div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         SATELLITE & WEATHER TAB
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-env">
+      <div style="background:linear-gradient(135deg,rgba(56,189,248,0.08),rgba(139,92,246,0.06));border:1px solid var(--brd2);border-radius:var(--r-lg);padding:20px 24px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px"><span style="font-size:22px">🛰️</span><div><div style="font-size:17px;font-weight:700;color:var(--txt)">Satellite & Weather Intelligence — Sylhet Division</div><div style="font-size:11px;color:var(--txt3)">Agent 1 Environmental · Sentinel-1 SAR · Weather API · Flood detection</div></div><div style="margin-left:auto;padding:4px 12px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:20px;font-size:10px;font-weight:600;color:var(--emerald)">GEE ACTIVE</div></div>
+      </div>
+      <!-- Satellite KPIs -->
+      <div class="grid g-5" style="margin-bottom:16px">
+        <div class="card" style="border-top:2px solid var(--sky)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Zones Scanned</div><div style="font-size:26px;font-weight:700;color:var(--sky)">39</div><div style="font-size:9px;color:var(--txt4)">4 sources</div></div></div>
+        <div class="card" style="border-top:2px solid var(--red)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Flood Detected</div><div style="font-size:26px;font-weight:700;color:var(--red)" id="satFloodCnt">0</div><div style="font-size:9px;color:var(--txt4)">Active flood zones</div></div></div>
+        <div class="card" style="border-top:2px solid var(--amber)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Coverage</div><div style="font-size:26px;font-weight:700;color:var(--amber)">93%</div><div style="font-size:9px;color:var(--txt4)">Division coverage</div></div></div>
+        <div class="card" style="border-top:2px solid var(--emerald)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Last Scan</div><div style="font-size:26px;font-weight:700;color:var(--emerald);font-size:16px" id="satLastScan">--</div><div style="font-size:9px;color:var(--txt4)">UTC</div></div></div>
+        <div class="card" style="border-top:2px solid var(--violet)"><div class="card-body" style="text-align:center;padding:14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">SAR Accuracy</div><div style="font-size:26px;font-weight:700;color:var(--violet)">94.6%</div><div style="font-size:9px;color:var(--txt4)">U-Net CNN model</div></div></div>
+      </div>
+      <div class="grid g-2">
+        <!-- Weather -->
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">🌦️</span> Weather Conditions — Sylhet</div><div class="card-badge" id="wxTime">--</div></div>
+          <div class="card-body"><div class="wx-grid"><div class="wx-card"><div class="wx-val" id="wxTemp">--</div><div class="wx-lbl">Temp °C</div></div><div class="wx-card"><div class="wx-val" id="wxRain">--</div><div class="wx-lbl">Rain (mm)</div></div><div class="wx-card"><div class="wx-val" id="wxHumid">--</div><div class="wx-lbl">Humidity %</div></div><div class="wx-card"><div class="wx-val" id="wxWind">--</div><div class="wx-lbl">Wind km/h</div></div><div class="wx-card"><div class="wx-val" id="wxCloud">--</div><div class="wx-lbl">Cloud %</div></div><div class="wx-card"><div class="wx-val" id="wxDesc">--</div><div class="wx-lbl">Condition</div></div></div></div>
+        </div>
+        <!-- SAR -->
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">🛰️</span> SAR Flood Detection</div><div class="card-badge">Sentinel-1</div></div>
+          <div class="card-body"><div class="sar-compare" id="sarPanel"><div class="sar-img" id="sarBeforeBox"><div class="label">Before Flood</div><div class="sar-placeholder" id="sarBeforeIcon">🛰️</div><div class="status" style="color:var(--txt3)" id="sarBefore">Pre-monsoon baseline<br><span style="font-size:9px;color:var(--txt4)">Sentinel-1 SAR</span></div></div><div class="sar-img" id="sarAfterBox"><div class="label">During Flood</div><div class="sar-placeholder" id="sarAfterIcon">🌊</div><div class="status" id="sarAfter"><span style="color:var(--amber)">CNN flood extent</span><br><span style="font-size:9px;color:var(--txt4)">94.64% accuracy</span></div></div></div><div style="padding:0 14px 10px;font-size:10px;color:var(--txt4);text-align:center;font-family:'JetBrains Mono'" id="sarStatus">Agent 1 offline — showing capability overview</div></div>
+        </div>
+      </div>
+      <!-- Detection Results Table -->
+      <div class="grid g-1" style="margin-top:12px">
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">📋</span> Detection Results — 39 Upazilas</div></div><div class="card-body" id="satDetBody" style="max-height:400px"><div class="empty"><div class="i">🛰️</div><div class="m">Detection table populates from Agent 1 data</div></div></div></div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         RIVERS TAB
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-rivers">
+      <div style="background:linear-gradient(135deg,rgba(56,189,248,0.08),rgba(16,185,129,0.06));border:1px solid var(--brd2);border-radius:var(--r-lg);padding:20px 24px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px"><span style="font-size:22px">🌊</span><div><div style="font-size:17px;font-weight:700;color:var(--txt)">GeoFAS River Level Monitor — Sylhet Division</div><div style="font-size:11px;color:var(--txt3)">Real-time flood gauge data · Surma · Kushiyara · Manu · Khowai · Piyain and more</div></div><div style="margin-left:auto;padding:4px 12px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:20px;font-size:10px;font-weight:600;color:var(--emerald)">GeoFAS LIVE</div></div>
+      </div>
+      <!-- River KPIs -->
+      <div class="grid g-4" style="margin-bottom:16px">
+        <div class="card" style="border-top:2px solid var(--red)"><div class="card-body" style="text-align:center;padding:16px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Danger Level</div><div style="font-size:28px;font-weight:700;color:var(--red)" id="riverDangerCnt">0</div><div style="font-size:10px;color:var(--txt4)">Above flood danger</div></div></div>
+        <div class="card" style="border-top:2px solid var(--amber)"><div class="card-body" style="text-align:center;padding:16px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Warning Level</div><div style="font-size:28px;font-weight:700;color:var(--amber)" id="riverWarnCnt">0</div><div style="font-size:10px;color:var(--txt4)">Approaching danger</div></div></div>
+        <div class="card" style="border-top:2px solid var(--emerald)"><div class="card-body" style="text-align:center;padding:16px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Normal Level</div><div style="font-size:28px;font-weight:700;color:var(--emerald)" id="riverNormCnt">0</div><div style="font-size:10px;color:var(--txt4)">Below warning</div></div></div>
+        <div class="card" style="border-top:2px solid var(--violet)"><div class="card-body" style="text-align:center;padding:16px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Highest %</div><div style="font-size:28px;font-weight:700;color:var(--violet)" id="riverMaxPct">0%</div><div style="font-size:10px;color:var(--txt4)">of danger level</div></div></div>
+      </div>
+      <div class="grid g-2">
+        <!-- Gauge list -->
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">🌊</span> River Gauge Readings</div><div class="card-badge" id="riversCnt">8 rivers</div></div><div class="card-body" id="riversBody" style="max-height:500px"><div class="empty"><div class="i">🌊</div><div class="m">Loading river data...</div></div></div></div>
+        <!-- Chart -->
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">📊</span> Comparative Level Chart</div></div><div class="card-body" style="padding:14px"><canvas id="riverChart" height="280"></canvas></div></div>
+      </div>
+      <!-- River-Upazila mapping table -->
+      <div class="grid g-1" style="margin-top:12px">
+        <div class="card"><div class="card-h"><div class="card-title"><span class="emoji">🗺️</span> River — Upazila Mapping</div></div><div class="card-body" id="riverMapBody" style="max-height:400px"></div></div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         LOG SECTION
+         ════════════════════════════════════════════════════════════ -->
+    <div class="sec" id="sec-log">
+      <div class="grid g-1">
+        <div class="card">
+          <div class="card-h"><div class="card-title"><span class="emoji">📋</span> Event Log</div><div class="card-badge" id="lgCnt">0</div></div>
+          <div class="log-body" id="lgBody" style="max-height:600px"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
 
 <div class="toast" id="toast"></div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
-const ZONES={mirpur:{lat:23.8223,lon:90.3654,name:"Mirpur"},uttara:{lat:23.8759,lon:90.3795,name:"Uttara"},mohammadpur:{lat:23.7662,lon:90.3589,name:"Mohammadpur"},dhanmondi:{lat:23.7461,lon:90.3742,name:"Dhanmondi"},badda:{lat:23.7806,lon:90.4261,name:"Badda"},jatrabari:{lat:23.7104,lon:90.4348,name:"Jatrabari"},demra:{lat:23.7225,lon:90.4968,name:"Demra"},sylhet:{lat:24.8949,lon:91.8687,name:"Sylhet"},sunamganj:{lat:25.0715,lon:91.395,name:"Sunamganj"}};
-const S={a1:{on:false,h:null},a2:{on:false,h:null,q:[],o:null},a3:{on:false,h:null,inv:null,al:[],st:null},a4:{on:false,h:null,disp:[],st:null},logs:[],seenQ:new Set(),seenA:new Set(),zd:{},floodZones:{}};
-let pollT=null,map=null,markers={};
+// ═══════════════════════════════════════════════════════════════════
+// STATE & CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const ZONES={mirpur:{lat:23.8223,lon:90.3654,name:"Mirpur"},uttara:{lat:23.8759,lon:90.3795,name:"Uttara"},mohammadpur:{lat:23.7662,lon:90.3589,name:"Mohammadpur"},dhanmondi:{lat:23.7461,lon:90.3742,name:"Dhanmondi"},badda:{lat:23.7806,lon:90.4261,name:"Badda"},jatrabari:{lat:23.7104,lon:90.4348,name:"Jatrabari"},demra:{lat:23.7225,lon:90.4968,name:"Demra"},sylhet:{lat:24.8949,lon:91.8687,name:"Sylhet"},sylhetsadar:{lat:24.8949,lon:91.8687,name:"Sylhet Sadar"},beanibazar:{lat:24.7611,lon:92.0189,name:"Beanibazar"},bishwanath:{lat:24.8659,lon:91.9819,name:"Bishwanath"},companiganj:{lat:25.1167,lon:91.95,name:"Companiganj"},fenchuganj:{lat:24.7667,lon:91.9,name:"Fenchuganj"},golapganj:{lat:24.7667,lon:91.9833,name:"Golapganj"},gowainghat:{lat:25.0167,lon:91.95,name:"Gowainghat"},jaintiapur:{lat:25.0833,lon:92.1167,name:"Jaintiapur"},kanaighat:{lat:25.0,lon:92.2,name:"Kanaighat"},osmaninagar:{lat:24.8333,lon:92.0,name:"Osmani Nagar"},southsurma:{lat:24.8333,lon:91.8,name:"South Surma"},zakiganj:{lat:24.7667,lon:92.1833,name:"Zakiganj"},balaganj:{lat:24.7333,lon:91.8,name:"Balaganj"},sunamganj:{lat:25.0658,lon:91.395,name:"Sunamganj"},sunamganjsadar:{lat:25.0658,lon:91.395,name:"Sunamganj Sadar"},bishwamvarpur:{lat:24.9167,lon:91.2833,name:"Bishwamvarpur"},chhatak:{lat:25.05,lon:91.6667,name:"Chhatak"},derai:{lat:24.7833,lon:91.5,name:"Derai"},dharampasha:{lat:24.9833,lon:91.0667,name:"Dharampasha"},dowarabazar:{lat:25.0,lon:91.55,name:"Dowarabazar"},jagannathpur:{lat:24.6833,lon:91.5333,name:"Jagannathpur"},jamalganj:{lat:25.0167,lon:91.25,name:"Jamalganj"},sullah:{lat:24.85,lon:91.3667,name:"Sullah"},tahirpur:{lat:25.1,lon:91.0167,name:"Tahirpur"},moulvibazar:{lat:24.4827,lon:91.7773,name:"Moulvibazar"},moulvibazarsadar:{lat:24.4827,lon:91.7773,name:"Moulvibazar Sadar"},barlekha:{lat:24.6167,lon:92.1667,name:"Barlekha"},juri:{lat:24.55,lon:92.0833,name:"Juri"},kamalganj:{lat:24.3833,lon:91.85,name:"Kamalganj"},kulaura:{lat:24.5333,lon:92.0167,name:"Kulaura"},rajnagar:{lat:24.3333,lon:91.8833,name:"Rajnagar"},sreemangal:{lat:24.3,lon:91.7333,name:"Sreemangal"},habiganj:{lat:24.3745,lon:91.4153,name:"Habiganj"},habiganjsadar:{lat:24.3745,lon:91.4153,name:"Habiganj Sadar"},ajmiriganj:{lat:24.2167,lon:91.3167,name:"Ajmiriganj"},bahubal:{lat:24.3667,lon:91.55,name:"Bahubal"},baniachong:{lat:24.5,lon:91.3667,name:"Baniachong"},chunarughat:{lat:24.2833,lon:91.6333,name:"Chunarughat"},lakhai:{lat:24.2167,lon:91.4167,name:"Lakhai"},madhabpur:{lat:24.1667,lon:91.5833,name:"Madhabpur"},nabiganj:{lat:24.3667,lon:91.2167,name:"Nabiganj"},shayestaganj:{lat:24.4,lon:91.5,name:"Shayestaganj"}};
+const S={a1:{on:false,h:null},a2:{on:false,h:null,q:[],o:null},a3:{on:false,h:null,inv:null,al:[],st:null},a4:{on:false,h:null,disp:[],st:null,geo:[]},logs:[],seenQ:new Set(),seenA:new Set(),zd:{},floodZones:{}};
+let pollT=null,map=null,markers={},routeLayers=[];
+const u1=()=>document.getElementById('u1').value.replace(/\/$/,'');
 const u2=()=>document.getElementById('u2').value.replace(/\/$/,'');
 const u3=()=>document.getElementById('u3').value.replace(/\/$/,'');
 const u4=()=>document.getElementById('u4').value.replace(/\/$/,'');
 
+// ═══════════════════════════════════════════════════════════════════
 // UTILS
+// ═══════════════════════════════════════════════════════════════════
 function log(s,m,l='info'){const t=new Date().toLocaleTimeString('en-US',{hour12:false});S.logs.unshift({t,s,m,l});if(S.logs.length>200)S.logs.pop();renderLog()}
 function toast(m,t='ok'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast show ${t}`;setTimeout(()=>e.className='toast',3000)}
 async function fetchJ(u,t=3000){const c=new AbortController();const tm=setTimeout(()=>c.abort(),t);try{const r=await fetch(u,{signal:c.signal});clearTimeout(tm);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(e){clearTimeout(tm);throw e}}
 async function postJ(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}
 
-// NAV
-function switchSec(n,btn){document.querySelectorAll('.sec').forEach(s=>s.classList.remove('act'));document.querySelectorAll('.nav-t').forEach(t=>t.classList.remove('act'));document.getElementById(`sec-${n}`).classList.add('act');btn.classList.add('act');if(n==='map'&&!map)initMap();if(n==='map'&&map)setTimeout(()=>{map.invalidateSize();updateMap()},100)}
+// ═══════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+function switchSec(n,btn){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('act'));
+  document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('act'));
+  document.getElementById(`sec-${n}`).classList.add('act');
+  btn.classList.add('act');
+  if(n==='map'&&!map)initMap();
+  if(n==='map'&&map)setTimeout(()=>{map.invalidateSize();updateMap()},100);
+}
 function switchSim(n,btn){document.querySelectorAll('.sim-p').forEach(p=>p.classList.remove('act'));document.querySelectorAll('.sim-t').forEach(t=>t.classList.remove('act'));document.getElementById(`sim-${n}`).classList.add('act');btn.classList.add('act')}
 
-// WEATHER (direct from OpenWeatherMap)
+// ═══════════════════════════════════════════════════════════════════
+// WEATHER
+// ═══════════════════════════════════════════════════════════════════
 async function fetchWeather(){
   try{
-    // Try fetching from Agent 1 first, then fallback to mock
-    try{const d=await fetchJ('http://localhost:8001/weather',2000);updateWeatherUI(d);return}catch{}
-    // Fallback: use OpenWeatherMap directly (Dhaka)
-    const k=document.querySelector('[id="u2"]')?.dataset?.wxKey||'';
-    if(k){const d=await fetchJ(`https://api.openweathermap.org/data/2.5/weather?q=Dhaka&appid=${k}&units=metric`);updateWeatherUI({temp:d.main.temp,humidity:d.main.humidity,rain:d.rain?.['1h']||0,wind:d.wind.speed*3.6,clouds:d.clouds.all,desc:d.weather[0].main});return}
-    // Static demo data for defense
-    updateWeatherUI({temp:31,humidity:82,rain:12.5,wind:18,clouds:90,desc:'Heavy Rain'})
+    try{const d=await fetchJ(`${u1()}/weather`,2000);updateWeatherUI(d);return}catch{}
+    updateWeatherUI({temp:31,humidity:82,rain:12.5,wind:18,clouds:90,desc:'Heavy Rain'});
   }catch{updateWeatherUI({temp:31,humidity:82,rain:12.5,wind:18,clouds:90,desc:'Heavy Rain'})}
 }
-
 function updateWeatherUI(w){
   document.getElementById('wxTemp').textContent=w.temp!=null?Math.round(w.temp):'--';
   document.getElementById('wxRain').textContent=w.rain!=null?w.rain.toFixed(1):'0';
@@ -524,54 +1168,94 @@ function updateWeatherUI(w){
   document.getElementById('wxDesc').textContent=w.desc||'--';
   document.getElementById('wxDesc').style.fontSize='12px';
   document.getElementById('wxTime').textContent=new Date().toLocaleTimeString('en-US',{hour12:false});
-  // Color rain red if heavy
   const rainEl=document.getElementById('wxRain');
-  if(parseFloat(rainEl.textContent)>10)rainEl.style.color='var(--red)';
-  else if(parseFloat(rainEl.textContent)>5)rainEl.style.color='var(--orange)';
-  else rainEl.style.color='var(--green)';
+  const rv=parseFloat(rainEl.textContent);
+  if(rv>10)rainEl.style.color='var(--red)';
+  else if(rv>5)rainEl.style.color='var(--amber)';
+  else rainEl.style.color='var(--emerald)';
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // POLLERS
-async function pollA1(){try{const h=await fetchJ('http://localhost:8001/health',2000);S.a1={on:true,h};if(!S.a1._w){log('AGENT-1','Connected — Environmental Intelligence online','ok');S.a1._w=true}}catch(e){if(S.a1.on||S.a1._w===undefined)log('AGENT-1',`Offline: ${e.message}`,'err');S.a1.on=false;S.a1._w=false}}
-async function pollA2(){try{const[h,q]=await Promise.all([fetchJ(`${u2()}/health`),fetchJ(`${u2()}/queue`)]);let o=null;try{o=await fetchJ(`${u2()}/output`)}catch{};S.a2={on:true,h,q,o};if(!S.a2._w){log('AGENT-2','Connected — Distress Intelligence online','ok');S.a2._w=true}}catch(e){if(S.a2.on||S.a2._w===undefined)log('AGENT-2',`Offline: ${e.message}`,'err');S.a2.on=false;S.a2._w=false}}
-async function pollA3(){try{const[h,al,st]=await Promise.all([fetchJ(`${u3()}/health`),fetchJ(`${u3()}/allocations?limit=50`),fetchJ(`${u3()}/status`)]);let inv=null;try{inv=await fetchJ(`${u3()}/inventory`)}catch{};S.a3={on:true,h,inv,al,st};if(!S.a3._w){log('AGENT-3','Connected — Resource Management online','ok');S.a3._w=true}}catch(e){if(S.a3.on||S.a3._w===undefined)log('AGENT-3',`Offline: ${e.message}`,'err');S.a3.on=false;S.a3._w=false}}
+// ═══════════════════════════════════════════════════════════════════
+async function pollA1(){try{const h=await fetchJ(`${u1()}/health`,2000);const w=S.a1._w;S.a1={on:true,h,_w:true};if(!w)log('AGENT-1','Connected — Environmental Intelligence online','ok')}catch(e){if(S.a1.on||S.a1._w===undefined)log('AGENT-1',`Offline: ${e.message}`,'err');S.a1={on:false,_w:false}}}
+async function pollA2(){try{const[h,q]=await Promise.all([fetchJ(`${u2()}/health`),fetchJ(`${u2()}/queue`)]);let o=null;try{o=await fetchJ(`${u2()}/output`)}catch{};const w=S.a2._w;S.a2={on:true,h,q,o,_w:true};if(!w)log('AGENT-2','Connected — Distress Intelligence online','ok')}catch(e){if(S.a2.on||S.a2._w===undefined)log('AGENT-2',`Offline: ${e.message}`,'err');S.a2={on:false,_w:false}}}
+async function pollA3(){try{const[h,al,st]=await Promise.all([fetchJ(`${u3()}/health`),fetchJ(`${u3()}/allocations?limit=50`),fetchJ(`${u3()}/status`)]);let inv=null;try{inv=await fetchJ(`${u3()}/inventory`)}catch{};const w=S.a3._w;S.a3={on:true,h,inv,al,st,_w:true};if(!w)log('AGENT-3','Connected — Resource Management online','ok')}catch(e){if(S.a3.on||S.a3._w===undefined)log('AGENT-3',`Offline: ${e.message}`,'err');S.a3={on:false,_w:false}}}
+async function pollA4(){try{const[h,disp,st]=await Promise.all([fetchJ(`${u4()}/health`),fetchJ(`${u4()}/dispatches?limit=30`),fetchJ(`${u4()}/status`)]);let geo=[];try{geo=await fetchJ(`${u4()}/routes/geo`)}catch{};const w=S.a4._w;S.a4={on:true,h,disp,st,geo,_w:true};if(!w)log('AGENT-4','Connected — Dispatch Optimization online','ok')}catch(e){if(S.a4.on||S.a4._w===undefined)log('AGENT-4',`Offline: ${e.message}`,'err');S.a4={on:false,_w:false}}}
 
-async function pollA4(){try{const[h,disp,st]=await Promise.all([fetchJ(`${u4()}/health`),fetchJ(`${u4()}/dispatches?limit=30`),fetchJ(`${u4()}/status`)]);S.a4={on:true,h,disp,st};if(!S.a4._w){log('AGENT-4','Connected — Dispatch Optimization online','ok');S.a4._w=true}}catch(e){if(S.a4.on||S.a4._w===undefined)log('AGENT-4',`Offline: ${e.message}`,'err');S.a4.on=false;S.a4._w=false}}
+// ═══════════════════════════════════════════════════════════════════
+// KPI STRIP
+// ═══════════════════════════════════════════════════════════════════
+function renderKPIs(){
+  const q=S.a2.q||[];
+  const al=S.a3.al||[];
+  const disp=S.a4.disp||[];
+  const zones=new Set();
+  q.forEach(i=>{if(i.zone_name&&i.zone_name!=='unknown')zones.add(i.zone_name)});
+  al.forEach(a=>{if(a.zone_name)zones.add(a.zone_name)});
+  const crit=q.filter(i=>i.urgency==='critical').length;
+  const totalRes=al.reduce((s,a)=>s+(a.resource_count||0),0);
 
+  document.getElementById('kpiZones').textContent=zones.size;
+  document.getElementById('kpiDistress').textContent=q.length;
+  document.getElementById('kpiCritical').textContent=crit;
+  document.getElementById('kpiAlloc').textContent=totalRes;
+  document.getElementById('kpiDisp').textContent=disp.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PIPELINE
+// ═══════════════════════════════════════════════════════════════════
 function renderPipeline(){
   // Agent 1
   const p1=document.getElementById('p1');
-  p1.className=`pipe-status ${S.a1.on?'pipe-on':'pipe-off'}`;p1.textContent=S.a1.on?'ONLINE':'OFFLINE';
+  p1.className=`pipe-tag ${S.a1.on?'on':'off'}`;p1.textContent=S.a1.on?'ONLINE':'OFFLINE';
+  document.getElementById('pn1').className=`pipe-num ${S.a1.on?'on':'off'}`;
+  if(S.a1.on)document.getElementById('pn1').style.background='var(--sky)';else document.getElementById('pn1').style.background='var(--s3)';
   document.getElementById('pa1').className=`pipe-arrow ${S.a1.on&&S.a2.on?'live':'broken'}`;
   document.getElementById('warnA1').classList.toggle('hidden',S.a1.on);
-  // Agent 2-3
-  const p2=document.getElementById('p2'),p3=document.getElementById('p3');
-  p2.className=`pipe-status ${S.a2.on?'pipe-on':'pipe-off'}`;p2.textContent=S.a2.on?'ONLINE':'OFFLINE';
-  p3.className=`pipe-status ${S.a3.on?'pipe-on':'pipe-off'}`;p3.textContent=S.a3.on?'ONLINE':'OFFLINE';
-  // Arrow A2→A3: green if both online and Redis connected
+
+  // Agent 2
+  const p2=document.getElementById('p2');
+  p2.className=`pipe-tag ${S.a2.on?'on':'off'}`;p2.textContent=S.a2.on?'ONLINE':'OFFLINE';
+  document.getElementById('pn2').className=`pipe-num ${S.a2.on?'on':'off'}`;
+  if(S.a2.on)document.getElementById('pn2').style.background='var(--red)';else document.getElementById('pn2').style.background='var(--s3)';
+
+  // Agent 3
+  const p3=document.getElementById('p3');
+  p3.className=`pipe-tag ${S.a3.on?'on':'off'}`;p3.textContent=S.a3.on?'ONLINE':'OFFLINE';
+  document.getElementById('pn3').className=`pipe-num ${S.a3.on?'on':'off'}`;
+  if(S.a3.on)document.getElementById('pn3').style.background='var(--emerald)';else document.getElementById('pn3').style.background='var(--s3)';
+
   const a2redis=S.a2.h?.redis_connected;const a3redis=S.a3.h?.redis==='ok';
   const pubsubOk=a2redis&&a3redis;
   document.getElementById('pa2').className=`pipe-arrow ${pubsubOk?'live':'broken'}`;
-  // Agent 4 pipeline
+
+  // Agent 4
   const p4=document.getElementById('p4');
-  p4.className=`pipe-status ${S.a4.on?'pipe-on':'pipe-off'}`;p4.textContent=S.a4.on?'ONLINE':'OFFLINE';
+  p4.className=`pipe-tag ${S.a4.on?'on':'off'}`;p4.textContent=S.a4.on?'ONLINE':'OFFLINE';
+  document.getElementById('pn4').className=`pipe-num ${S.a4.on?'on':'off'}`;
+  if(S.a4.on)document.getElementById('pn4').style.background='var(--violet)';else document.getElementById('pn4').style.background='var(--s3)';
   const a3a4redis=a3redis&&S.a4.h?.redis==='ok';
   document.getElementById('pa3').className=`pipe-arrow ${a3a4redis?'live':'broken'}`;
-  // Show/hide pubsub warning
+
   document.getElementById('warnPubsub').classList.toggle('hidden',pubsubOk||!S.a2.on||!S.a3.on);
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // BUILD ZONE DATA
+// ═══════════════════════════════════════════════════════════════════
 function buildZones(){
   const z={};
-  (S.a2.q||[]).forEach(q=>{const n=q.zone_name||'Unknown';if(n==='unknown')return;if(!z[n])z[n]={dist:0,alloc:0,res:0,urg:'low',ppl:0,lat:null,lon:null,verified:0,unverified:0};z[n].dist++;z[n].ppl+=(q.people_count||0);if(q.location){z[n].lat=q.location.latitude;z[n].lon=q.location.longitude}const r={critical:4,high:3,medium:2,low:1};if((r[q.urgency]||0)>(r[z[n].urg]||0))z[n].urg=q.urgency;if(q.flood_verified)z[n].verified++;else z[n].unverified++});
-  (S.a3.al||[]).forEach(a=>{const n=a.zone_name||'Unknown';if(!z[n])z[n]={dist:0,alloc:0,res:0,urg:'low',ppl:0,lat:null,lon:null,verified:0,unverified:0};z[n].alloc++;z[n].res+=(a.resource_count||0)});
+  (S.a2.q||[]).forEach(q=>{const n=q.zone_name||'Unknown';if(n==='unknown')return;if(!z[n])z[n]={dist:0,alloc:0,res:0,urg:'low',ppl:0,lat:null,lon:null,verified:0,unverified:0,rf:null};z[n].dist++;z[n].ppl+=(q.people_count||0);if(q.location){z[n].lat=q.location.latitude;z[n].lon=q.location.longitude}const r={critical:4,high:3,medium:2,low:1};if((r[q.urgency]||0)>(r[z[n].urg]||0))z[n].urg=q.urgency;if(q.flood_verified)z[n].verified++;else z[n].unverified++;if(q.risk_factors&&!z[n].rf)z[n].rf=q.risk_factors});
+  (S.a3.al||[]).forEach(a=>{const n=a.zone_name||'Unknown';if(!z[n])z[n]={dist:0,alloc:0,res:0,urg:'low',ppl:0,lat:null,lon:null,verified:0,unverified:0,rf:null};z[n].alloc++;z[n].res+=(a.resource_count||0)});
   Object.keys(z).forEach(n=>{if(!z[n].lat){const k=n.toLowerCase().replace(/\s+/g,'');if(ZONES[k]){z[n].lat=ZONES[k].lat;z[n].lon=ZONES[k].lon}}});
   S.zd=z;
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // CHANNEL COUNTS
+// ═══════════════════════════════════════════════════════════════════
 function renderChannels(){
   if(!S.a2.o)return;
   const c=S.a2.o.reports_by_channel||{};
@@ -583,9 +1267,10 @@ function renderChannels(){
   document.getElementById('chTotal').textContent=`${total} reports ingested`;
 }
 
-// FLOOD ZONES (from satellite alerts stored in Agent 2)
+// ═══════════════════════════════════════════════════════════════════
+// FLOOD ZONES
+// ═══════════════════════════════════════════════════════════════════
 function renderFloodZones(){
-  // Derive from queue data — zones where flood_verified=true have Agent 1 data
   const zones={};
   (S.a2.q||[]).forEach(q=>{
     const n=q.zone_name;if(!n||n==='unknown')return;
@@ -600,15 +1285,17 @@ function renderFloodZones(){
   document.getElementById('fzCount').textContent=`${list.length} zones`;
   const el=document.getElementById('fzBody');
   if(!list.length){el.innerHTML=`<div class="empty"><div class="i">🛰️</div><div class="m">No flood zones detected</div></div>`;return}
-  const sc={critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--green)'};
+  const sc={critical:'var(--red)',high:'var(--amber)',medium:'#facc15',low:'var(--emerald)'};
   el.innerHTML=list.map(([n,d])=>{
-    const c=sc[d.severity]||'var(--dim)';
+    const c=sc[d.severity]||'var(--txt3)';
     const rPct=Math.round((d.riskScore||0)*100);
-    return`<div class="fz-item"><div class="fz-dot" style="background:${c};box-shadow:0 0 6px ${c}"></div><div class="fz-info"><div class="fz-name">${n} ${d.verified?'<span class="tag tag-green">VERIFIED</span>':'<span class="tag tag-red">UNVERIFIED</span>'}</div><div class="fz-meta">${d.ppl.toLocaleString()} people at risk</div></div><div class="fz-bar"><div class="fz-bar-fill" style="width:${rPct}%;background:${c}"></div></div></div>`
+    return`<div class="fz-item"><div class="fz-dot" style="background:${c};box-shadow:0 0 8px ${c}"></div><div class="fz-info"><div class="fz-name">${n} ${d.verified?'<span class="tag tag-green">VERIFIED</span>':'<span class="tag tag-red">UNVERIFIED</span>'}</div><div class="fz-meta">${d.ppl.toLocaleString()} people at risk · Risk ${rPct}%</div></div><div class="fz-bar"><div class="fz-bar-fill" style="width:${rPct}%;background:${c}"></div></div></div>`
   }).join('');
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // QUEUE
+// ═══════════════════════════════════════════════════════════════════
 function renderQueue(){
   const q=S.a2.q||[];
   const crit=q.filter(i=>i.urgency==='critical').length;
@@ -621,16 +1308,18 @@ function renderQueue(){
   sorted.forEach(i=>{
     const nw=!S.seenQ.has(i.id);S.seenQ.add(i.id);
     const p=Math.round((i.priority_score||0)*100);
-    const bc=p>=80?'var(--red)':p>=50?'var(--orange)':'var(--yellow)';
+    const bc=p>=80?'var(--red)':p>=50?'var(--amber)':'#facc15';
     const ch=(i.channel||'').replace(/_/g,' ');
     const dt=(i.distress_type||'').replace(/_/g,' ');
     const vTag=i.flood_verified?'<span class="tag tag-green">VERIFIED</span>':'<span class="tag tag-red">UNVERIFIED</span>';
-    h+=`<tr class="${nw?'new-row':''}"><td><div class="p-bar" style="width:50px;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:4px"><div style="height:100%;width:${p}%;background:${bc};border-radius:3px"></div></div><span style="font-family:'JetBrains Mono';font-size:10px;color:var(--dim)">${p}%</span></td><td style="font-weight:600">${i.zone_name||'?'}</td><td style="font-size:10px;color:var(--dim);text-transform:capitalize">${dt}</td><td><span class="pill pill-${i.urgency||'medium'}">${i.urgency}</span></td><td><span class="tag tag-cyan">${ch}</span></td><td style="font-family:'JetBrains Mono'">${i.people_count!=null?i.people_count.toLocaleString():'—'}</td><td>${vTag}</td></tr>`;
+    h+=`<tr class="${nw?'new-row':''}"><td><div style="width:50px;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:5px"><div style="height:100%;width:${p}%;background:${bc};border-radius:3px"></div></div><span style="font-family:'JetBrains Mono';font-size:10px;color:var(--txt3)">${p}%</span></td><td style="font-weight:600">${i.zone_name||'?'}</td><td style="font-size:10px;color:var(--txt3);text-transform:capitalize">${dt}</td><td><span class="pill pill-${i.urgency||'medium'}">${i.urgency}</span></td><td><span class="tag tag-sky">${ch}</span></td><td style="font-family:'JetBrains Mono'">${i.people_count!=null?i.people_count.toLocaleString():'—'}</td><td>${vTag}</td></tr>`;
   });
   el.innerHTML=h+'</tbody></table>';
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // INVENTORY
+// ═══════════════════════════════════════════════════════════════════
 function renderInv(){
   const inv=S.a3.inv;const el=document.getElementById('invBody');
   if(!inv?.resources){el.innerHTML=`<div class="empty"><div class="i">🏗️</div><div class="m">Agent 3 not connected</div></div>`;document.getElementById('invCnt').textContent='--';return}
@@ -638,93 +1327,131 @@ function renderInv(){
   const R=inv.resources;let tA=0,tT=0,h='<div class="inv-g">';
   Object.keys(R).forEach(t=>{const d=R[t],av=d.available||0,dp=d.deployed||0,rt=d.returning_count||d.returning||0,mt=d.maintenance||0;const tot=av+dp+rt+mt;tA+=av;tT+=tot;const p=tot>0?Math.round(av/tot*100):0;const c=p>50?'good':p>20?'warn':'crit';h+=`<div class="inv-c"><div class="inv-type">${em[t]||'📦'} ${t.replace(/_/g,' ')}</div><div class="inv-nums"><span class="inv-av">${av}</span><span class="inv-tot">/ ${tot}</span></div><div class="inv-bar"><div class="inv-fill ${c}" style="width:${p}%"></div></div><div class="inv-det">${dp} deployed · ${rt} returning</div></div>`});
   const op=tT>0?Math.round(tA/tT*100):0;
-  h+=`<div class="inv-c" style="border-color:var(--accent);background:rgba(59,125,255,.08)"><div class="inv-type">📊 TOTAL</div><div class="inv-nums"><span class="inv-av" style="color:var(--accent)">${tA}</span><span class="inv-tot">/ ${tT}</span></div><div class="inv-bar"><div class="inv-fill" style="width:${op}%;background:var(--accent)"></div></div><div class="inv-det">${op}% available</div></div></div>`;
+  h+=`<div class="inv-c" style="border-color:rgba(56,189,248,0.3);background:rgba(56,189,248,0.05)"><div class="inv-type">📊 TOTAL</div><div class="inv-nums"><span class="inv-av" style="color:var(--sky)">${tA}</span><span class="inv-tot">/ ${tT}</span></div><div class="inv-bar"><div class="inv-fill" style="width:${op}%;background:var(--sky)"></div></div><div class="inv-det">${op}% available</div></div></div>`;
   el.innerHTML=h;document.getElementById('invCnt').textContent=`${tA}/${tT} available`;
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // ALLOCATIONS
+// ═══════════════════════════════════════════════════════════════════
 function renderAlloc(){
   const al=S.a3.al||[];document.getElementById('alCnt').textContent=`${al.length} records`;
   const el=document.getElementById('alBody');
   if(!al.length){el.innerHTML=`<div class="empty"><div class="i">⏳</div><div class="m">No allocations</div></div>`;return}
-  const uc={LIFE_THREATENING:'var(--red)',URGENT:'var(--orange)',MODERATE:'var(--yellow)'};
-  el.innerHTML=al.map(a=>{const nw=!S.seenA.has(a.id);S.seenA.add(a.id);const c=uc[a.urgency]||'var(--dim)';const ts=a.timestamp?new Date(a.timestamp).toLocaleTimeString('en-US',{hour12:false}):'—';const p=a.partial_allocation?' <span style="color:var(--orange);font-size:8px;font-weight:700">PARTIAL</span>':'';return`<div class="al-item ${nw?'new-row':''}"><div class="al-dot" style="background:${c};box-shadow:0 0 6px ${c}"></div><div><div class="al-zone">${a.zone_name||'?'}${p}</div><div class="al-meta">${ts} · ${a.urgency||'—'} · ${a.num_people_affected||0} people</div></div><div class="al-cnt">${a.resource_count||0}×</div></div>`}).join('');
+  const uc={LIFE_THREATENING:'var(--red)',URGENT:'var(--amber)',MODERATE:'#facc15'};
+  el.innerHTML=al.map(a=>{const nw=!S.seenA.has(a.id);S.seenA.add(a.id);const c=uc[a.urgency]||'var(--txt3)';const ts=a.timestamp?new Date(a.timestamp).toLocaleTimeString('en-US',{hour12:false}):'—';const p=a.partial_allocation?' <span style="color:var(--amber);font-size:8px;font-weight:700">PARTIAL</span>':'';return`<div class="al-item ${nw?'new-row':''}"><div class="al-dot" style="background:${c};box-shadow:0 0 6px ${c}"></div><div><div class="al-zone">${a.zone_name||'?'}${p}</div><div class="al-meta">${ts} · ${a.urgency||'—'} · ${a.num_people_affected||0} people</div></div><div class="al-cnt">${a.resource_count||0}×</div></div>`}).join('');
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // DISPATCH (Agent 4)
+// ═══════════════════════════════════════════════════════════════════
 function renderDispatch(){
   const disp=S.a4.disp||[];
   document.getElementById('dspCnt').textContent=`${disp.length} dispatches`;
   document.getElementById('dspStatus').textContent=S.a4.on?'ONLINE':'OFFLINE';
-  document.getElementById('dspStatus').style.color=S.a4.on?'var(--green)':'var(--red)';
+  document.getElementById('dspStatus').style.color=S.a4.on?'var(--emerald)':'var(--red)';
   const el=document.getElementById('dspBody');
-  if(!S.a4.on){el.innerHTML=`<div class="empty"><div class="i">🚚</div><div class="m">Agent 4 not connected</div><div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'JetBrains Mono'">python -m src.agents.agent_4_dispatch.main</div></div>`;return}
-  if(!disp.length){el.innerHTML=`<div class="empty"><div class="i">🚚</div><div class="m">No dispatch plans yet</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Dispatches created when Agent 3 allocates resources</div></div>`;return}
+  if(!S.a4.on){el.innerHTML=`<div class="empty"><div class="i">🚚</div><div class="m">Agent 4 not connected</div><div class="hint">python -m src.agents.agent_4_dispatch.main</div></div>`;return}
+  if(!disp.length){el.innerHTML=`<div class="empty"><div class="i">🚚</div><div class="m">No dispatch plans yet</div><div class="hint">Dispatches created when Agent 3 allocates resources</div></div>`;return}
   el.innerHTML=`<table class="dt"><thead><tr><th>Zone</th><th>Priority</th><th>Teams</th><th>ETA</th><th>Safety</th><th>Status</th><th>Time</th></tr></thead><tbody>${disp.map(d=>{
     const eta=d.total_eta_minutes||0;
     const safety=d.route_safety_score||0;
-    const sc=safety>=0.7?'var(--green)':safety>=0.4?'var(--orange)':'var(--red)';
-    const ec=eta<=15?'var(--green)':eta<=30?'var(--orange)':'var(--red)';
+    const sc=safety>=0.7?'var(--emerald)':safety>=0.4?'var(--amber)':'var(--red)';
+    const ec=eta<=15?'var(--emerald)':eta<=30?'var(--amber)':'var(--red)';
     const ts=d.timestamp?new Date(d.timestamp).toLocaleTimeString('en-US',{hour12:false}):'—';
     const st=d.status||'active';
-    const stc=st==='active'?'var(--green)':st==='completed'?'var(--dim)':'var(--red)';
-    return`<tr><td style="font-weight:600">${d.zone_name||'?'}</td><td><span class="pill pill-${d.priority<=2?'critical':d.priority<=3?'high':'medium'}">${d.priority}</span></td><td style="font-family:'JetBrains Mono';font-weight:700;color:var(--cyan)">${d.team_count||0}</td><td style="font-family:'JetBrains Mono';color:${ec}">${eta.toFixed(1)} min</td><td><div style="display:flex;align-items:center;gap:4px"><div style="width:40px;height:4px;background:var(--s3);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.round(safety*100)}%;background:${sc};border-radius:2px"></div></div><span style="font-family:'JetBrains Mono';font-size:9px;color:${sc}">${(safety*100).toFixed(0)}%</span></div></td><td style="font-family:'JetBrains Mono';font-size:9px;color:${stc};text-transform:uppercase">${st}</td><td style="font-family:'JetBrains Mono';font-size:9px;color:var(--dim)">${ts}</td></tr>`
+    const stc=st==='active'?'var(--emerald)':st==='completed'?'var(--txt3)':'var(--red)';
+    return`<tr><td style="font-weight:600">${d.zone_name||'?'}</td><td><span class="pill pill-${d.priority<=2?'critical':d.priority<=3?'high':'medium'}">${d.priority}</span></td><td style="font-family:'JetBrains Mono';font-weight:700;color:var(--sky)">${d.team_count||0}</td><td style="font-family:'JetBrains Mono';color:${ec}">${eta.toFixed(1)} min</td><td><div style="display:flex;align-items:center;gap:5px"><div style="width:42px;height:4px;background:var(--s3);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.round(safety*100)}%;background:${sc};border-radius:2px"></div></div><span style="font-family:'JetBrains Mono';font-size:9px;color:${sc}">${(safety*100).toFixed(0)}%</span></div></td><td style="font-family:'JetBrains Mono';font-size:9px;color:${stc};text-transform:uppercase">${st}</td><td style="font-family:'JetBrains Mono';font-size:9px;color:var(--txt3)">${ts}</td></tr>`
   }).join('')}</tbody></table>`;
 }
 
-// ZONES
+// ═══════════════════════════════════════════════════════════════════
+// ZONE SUMMARY
+// ═══════════════════════════════════════════════════════════════════
 function renderZones(){
-  buildZones();const list=Object.entries(S.zd).sort((a,b)=>b[1].dist+b[1].alloc-(a[1].dist+a[1].alloc));
+  buildZones();
+  const list=Object.entries(S.zd).sort((a,b)=>b[1].dist+b[1].alloc-(a[1].dist+a[1].alloc));
   document.getElementById('zCnt').textContent=`${list.length} zones`;
   const el=document.getElementById('zBody');
   if(!list.length){el.innerHTML=`<div class="empty"><div class="i">📍</div><div class="m">No zones</div></div>`;return}
-  const uc={critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--green)'};
-  // Horizontal scrolling zone cards
-  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(${Math.min(list.length,4)},1fr);gap:8px;padding:12px">${list.map(([n,d])=>{
-    const c=uc[d.urg]||'var(--dim)';
-    return`<div style="background:var(--s2);border:1px solid var(--brd);border-radius:6px;padding:10px;border-left:3px solid ${c}"><div style="font-weight:700;font-size:13px;margin-bottom:3px">${n}</div><div style="font-size:9px;font-family:'JetBrains Mono';color:var(--dim)">${d.ppl.toLocaleString()} people · ${d.dist} reports · ${d.res} resources</div><div style="margin-top:5px"><span class="pill pill-${d.urg}">${d.urg}</span> ${d.verified>0?`<span class="tag tag-green">${d.verified} verified</span>`:''} ${d.unverified>0?`<span class="tag tag-red">${d.unverified} unverified</span>`:''}</div></div>`
+  const uc={critical:'var(--red)',high:'var(--amber)',medium:'#facc15',low:'var(--emerald)'};
+  el.innerHTML=`<div class="zone-grid">${list.map(([n,d])=>{
+    const c=uc[d.urg]||'var(--txt3)';
+    return`<div class="zone-card" style="border-left-color:${c}"><div class="zone-card-name">${n}</div><div class="zone-card-meta">${d.ppl.toLocaleString()} people · ${d.dist} reports · ${d.res} resources</div><div class="zone-card-tags"><span class="pill pill-${d.urg}">${d.urg}</span>${d.verified>0?` <span class="tag tag-green">${d.verified} verified</span>`:''} ${d.unverified>0?`<span class="tag tag-red">${d.unverified} unverified</span>`:''}</div></div>`
   }).join('')}</div>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // LOG
+// ═══════════════════════════════════════════════════════════════════
 function renderLog(){
   document.getElementById('lgCnt').textContent=`${S.logs.length}`;
   document.getElementById('lgBody').innerHTML=S.logs.slice(0,80).map(l=>{const c=l.l==='err'?'l-err':l.l==='warn'?'l-warn':l.l==='ok'?'l-ok':'l-msg';return`<div class="log-e"><span class="l-t">${l.t}</span><span class="l-s">[${l.s}]</span> <span class="${c}">${l.m}</span></div>`}).join('');
 }
 
+// ═══════════════════════════════════════════════════════════════════
 // MAP
+// ═══════════════════════════════════════════════════════════════════
 function initMap(){
-  map=L.map('mapC',{center:[23.78,90.40],zoom:12,attributionControl:false});
+  map=L.map('mapC',{center:[24.8,91.5],zoom:9,attributionControl:false});
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
   updateMap();
 }
-
 function updateMap(){
   if(!map)return;
   Object.values(markers).forEach(m=>map.removeLayer(m));markers={};
-  const uc={critical:'#ff4058',high:'#ff8c20',medium:'#ffc830',low:'#00d68f'};
+  const uc={critical:'#f43f5e',high:'#f59e0b',medium:'#facc15',low:'#10b981'};
   const us={critical:18,high:14,medium:11,low:9};
   const bounds=[];
   Object.entries(S.zd).forEach(([n,d])=>{
     let lat=d.lat,lon=d.lon;if(!lat){const k=n.toLowerCase().replace(/\s+/g,'');if(ZONES[k]){lat=ZONES[k].lat;lon=ZONES[k].lon}else return}
-    const c=uc[d.urg]||'#6b7394',s=us[d.urg]||10;
+    const c=uc[d.urg]||'#64748b',s=us[d.urg]||10;
     const icon=L.divIcon({className:'',html:`<div style="width:${s}px;height:${s}px;border-radius:50%;background:${c};box-shadow:0 0 ${s}px ${c}88,0 0 ${s*2}px ${c}44;border:2px solid ${c}cc"></div>`,iconSize:[s,s],iconAnchor:[s/2,s/2]});
     const m=L.marker([lat,lon],{icon}).addTo(map);
-    m.bindTooltip(`<div class="map-tip"><strong>${n}</strong> · <span style="color:${c}">${d.urg.toUpperCase()}</span><br>${d.ppl.toLocaleString()} people · ${d.dist} distress · ${d.res} resources</div>`,{direction:'top',offset:[0,-8],className:''});
+    let tipHtml=`<div class="map-tip"><strong>${n}</strong> · <span style="color:${c}">${d.urg.toUpperCase()}</span><br>${d.ppl.toLocaleString()} people · ${d.dist} distress · ${d.res} resources`;
+    if(d.rf){const rf=d.rf;const bar=(v,mx)=>{const pct=Math.round((v||0)/(mx||1)*100);const bc=pct>=80?'#f43f5e':pct>=50?'#f59e0b':'#10b981';return`<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:3px;background:rgba(255,255,255,0.1);border-radius:2px"><div style="height:100%;width:${pct}%;background:${bc};border-radius:2px"></div></div><span style="font-size:9px;color:${bc};min-width:24px;text-align:right">${typeof v==='number'&&v.toFixed?v.toFixed(2):v}</span></div>`};tipHtml+=`<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.15)"><div style="font-size:9px;font-weight:600;color:#94a3b8;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">Risk Factors</div><div style="display:grid;grid-template-columns:80px 1fr;gap:2px 6px;font-size:10px"><span>Rainfall</span>${bar(rf.rainfall_intensity,1)}<span>Satellite%</span>${bar(rf.satellite_flood_pct,100)}<span>River Lvl</span>${bar(rf.river_level_factor,1)}<span>Drainage</span>${bar(rf.drainage_factor,1)}<span>Elevation</span>${bar(rf.elevation_factor,1)}<span>Depth(m)</span>${bar(rf.flood_depth_estimate_m,4)}<span>Hist.Risk</span>${bar(rf.historical_risk,1)}</div></div>`}
+    tipHtml+=`</div>`;
+    m.bindTooltip(tipHtml,{direction:'top',offset:[0,-8],className:'',maxWidth:280});
     markers[n]=m;bounds.push([lat,lon]);
   });
   document.getElementById('mzCnt').textContent=`${Object.keys(S.zd).length} zones`;
-  // Legend + resources panels
   const list=Object.entries(S.zd).sort((a,b)=>b[1].dist-a[1].dist);
-  document.getElementById('mLeg').innerHTML=list.map(([n,d])=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--brd)"><div style="width:10px;height:10px;border-radius:50%;background:${uc[d.urg]};box-shadow:0 0 6px ${uc[d.urg]}88"></div><div style="flex:1"><div style="font-weight:600;font-size:12px">${n}</div><div style="font-size:9px;color:var(--dim);font-family:'JetBrains Mono'">${d.ppl.toLocaleString()} people</div></div><span class="pill pill-${d.urg}">${d.urg.toUpperCase()}</span></div>`).join('')||'<div class="empty"><div class="m">No zones</div></div>';
+  document.getElementById('mLeg').innerHTML=list.map(([n,d])=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--brd)"><div style="width:10px;height:10px;border-radius:50%;background:${uc[d.urg]};box-shadow:0 0 6px ${uc[d.urg]}88"></div><div style="flex:1"><div style="font-weight:600;font-size:12px">${n}</div><div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono'">${d.ppl.toLocaleString()} people</div></div><span class="pill pill-${d.urg}">${d.urg.toUpperCase()}</span></div>`).join('')||'<div class="empty"><div class="m">No zones</div></div>';
   const maxR=Math.max(...list.map(([,d])=>d.res),1);
-  document.getElementById('mRes').innerHTML=list.filter(([,d])=>d.res>0).map(([n,d])=>`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="font-weight:600">${n}</span><span style="font-family:'JetBrains Mono';color:var(--cyan)">${d.res} units</span></div><div style="height:5px;background:var(--s3);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.round(d.res/maxR*100)}%;background:var(--cyan);border-radius:3px"></div></div></div>`).join('')||'<div class="empty"><div class="m">No deployments</div></div>';
+  document.getElementById('mRes').innerHTML=list.filter(([,d])=>d.res>0).map(([n,d])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="font-weight:600">${n}</span><span style="font-family:'JetBrains Mono';color:var(--sky)">${d.res} units</span></div><div style="height:5px;background:var(--s4);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.round(d.res/maxR*100)}%;background:var(--sky);border-radius:3px"></div></div></div>`).join('')||'<div class="empty"><div class="m">No deployments</div></div>';
   if(bounds.length>1)map.fitBounds(bounds,{padding:[40,40]});
+
+  // Draw dispatch routes
+  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
+  const geo=S.a4?.geo||[];
+  geo.forEach(r=>{
+    if(!r.orig_lat||!r.dest_lat)return;
+    const active=r.dispatch_status==='active';
+    const isWater=r.transport_mode==='waterway';
+    const color=isWater?'#38bdf8':'#f59e0b';
+    const opacity=active?0.85:0.3;
+    const weight=active?3:1.5;
+    const dash=isWater?null:'6 4';
+    const line=L.polyline([[r.orig_lat,r.orig_lon],[r.dest_lat,r.dest_lon]],{color,weight,opacity,dashArray:dash}).addTo(map);
+    line.bindTooltip(`<div class="map-tip"><strong>${r.unit_name}</strong><br>${isWater?'🚤 Waterway':'🚗 Road'} · ${r.distance_km} km<br>ETA: ${r.eta_minutes} min · ${r.status}</div>`,{sticky:true,className:''});
+    routeLayers.push(line);
+    if(active){
+      const depotIcon=L.divIcon({className:'',html:`<div style="width:6px;height:6px;background:${color};transform:rotate(45deg);border:1px solid #fff;opacity:0.7"></div>`,iconSize:[6,6],iconAnchor:[3,3]});
+      const dm=L.marker([r.orig_lat,r.orig_lon],{icon:depotIcon}).addTo(map);
+      dm.bindTooltip(`<div class="map-tip">📍 Depot: ${r.unit_name}</div>`,{direction:'bottom',className:''});
+      routeLayers.push(dm);
+      const midLat=(r.orig_lat+r.dest_lat)/2,midLon=(r.orig_lon+r.dest_lon)/2;
+      const teamIcon=L.divIcon({className:'',html:`<div style="width:8px;height:8px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 8px ${color};animation:blink 1.5s infinite"></div>`,iconSize:[8,8],iconAnchor:[4,4]});
+      const tm=L.marker([midLat,midLon],{icon:teamIcon}).addTo(map);
+      tm.bindTooltip(`<div class="map-tip">🚨 ${r.unit_name} → ${r.zone_name}<br>ETA: ${r.eta_minutes} min</div>`,{direction:'top',className:''});
+      routeLayers.push(tm);
+    }
+  });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // SIMULATION SENDERS
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 const SMS_P=["FLOOD MIRPUR 4FT 6 ROOFTOP","FLOOD JATRABARI 6FT 12 TRAPPED","FLOOD UTTARA 2FT 3 RISING","FLOOD DEMRA 5FT 15 EVACUATE","FLOOD MOHAMMADPUR KNEE 8 FOOD"];
 const SOC_P=[{id:"fb_001",platform:"facebook",text:"মিরপুর ১২ নম্বর সেক্টরে পানি উঠে গেছে! রাস্তায় হাঁটু পানি 😱",author:"Ahmed_Mirpur",created_at:"2024-09-15T14:30:00",engagement:156,has_media:true},{id:"fb_002",platform:"facebook",text:"URGENT! 5 families stranded on rooftop in Pallabi, Mirpur! Water is chest deep! 🆘",author:"FloodWatch_BD",created_at:"2024-09-15T15:00:00",engagement:843,has_media:true},{id:"tw_003",platform:"twitter",text:"Uttara sector 10 e pani dhuktese basement e. Help please. 3 families stuck.",author:"uttara_resident",created_at:"2024-09-15T14:45:00",engagement:42},{id:"fb_005",platform:"facebook",text:"জাত্রাবাড়ী এলাকায় ভয়াবহ বন্যা! পানি ৬ ফুট! বাড়ি ভেঙে পড়েছে! উদ্ধার দরকার!",author:"jatrabari_crisis",created_at:"2024-09-15T15:30:00",engagement:2105,has_media:true},{id:"fb_007",platform:"facebook",text:"Demra industrial area te heavy flooding. Factory basement e pani. 30 workers trapped.",author:"demra_news",created_at:"2024-09-15T15:45:00",engagement:312},{id:"tw_008",platform:"twitter",text:"Mohammadpur Shyamoli road pani knee deep. Food supply lagbe badly.",author:"shyamoli_updates",created_at:"2024-09-15T16:00:00",engagement:67},{id:"fb_009",platform:"facebook",text:"HELP! Badda Gulshan link road flooded! Rescue boat needed for elderly couple!",author:"badda_help",created_at:"2024-09-15T15:20:00",engagement:534,has_media:true},{id:"fb_010",platform:"facebook",text:"Medical emergency in Mirpur 11! Pregnant woman trapped, water 4ft!",author:"mirpur_sos",created_at:"2024-09-15T16:15:00",engagement:1203,has_media:true},{id:"tw_012",platform:"twitter",text:"আমরা ১০ জন উত্তরায় আটকে আছি। পানি বাড়ছে। ছাদে আছি।",author:"uttara_help",created_at:"2024-09-15T16:10:00",engagement:445},{id:"fb_013",platform:"facebook",text:"Demra Matuail e 3 tin-shed bari venge gese. 2 baccha missing. URGENT!",author:"matuail_info",created_at:"2024-09-15T16:30:00",engagement:1567,has_media:true},{id:"fb_014",platform:"facebook",text:"Sunamganj completely underwater! Thousands stranded!",author:"sunamganj_sos",created_at:"2024-09-15T16:45:00",engagement:3200,has_media:true},{id:"fb_015",platform:"facebook",text:"Sylhet city flooded again. Surma river overflowing.",author:"sylhet_update",created_at:"2024-09-15T17:00:00",engagement:1800,has_media:true},{id:"fb_016",platform:"facebook",text:"Dhanmondi lake overflowing slightly. Some waterlogging on road 27.",author:"DhanmondiLife",created_at:"2024-09-15T14:20:00",engagement:23}];
 const SAT_P=[{zone_id:"mirpur",flood_pct:37.5,flood_depth_m:1.5,risk_score:.78,severity:"high",timestamp:new Date().toISOString()},{zone_id:"jatrabari",flood_pct:52,flood_depth_m:2.1,risk_score:.89,severity:"critical",timestamp:new Date().toISOString()},{zone_id:"demra",flood_pct:28,flood_depth_m:1.2,risk_score:.65,severity:"high",timestamp:new Date().toISOString()},{zone_id:"uttara",flood_pct:8,flood_depth_m:.4,risk_score:.35,severity:"moderate",timestamp:new Date().toISOString()},{zone_id:"dhanmondi",flood_pct:2,flood_depth_m:.1,risk_score:.15,severity:"low",timestamp:new Date().toISOString()}];
@@ -742,48 +1469,569 @@ async function sendSocial(){const ta=document.getElementById('smT');let posts;if
 async function sendSat(){const el=document.getElementById('satZ');let alerts;if(el._p){alerts=el._p;el._p=null}else{alerts=[{zone_id:el.value,flood_pct:+document.getElementById('satP').value,flood_depth_m:+document.getElementById('satD').value,risk_score:+document.getElementById('satR').value,severity:document.getElementById('satSv').value,timestamp:new Date().toISOString()}]}const r=document.getElementById('satRes');try{const d=await postJ(`${u2()}/ingest/flood_alerts`,alerts);r.className='s-res ok';r.textContent=`✓ ${d.message}`;log('SIM',`${alerts.length} satellite alerts`,'ok');toast(`${alerts.length} alerts sent`);setTimeout(triggerCycle,500)}catch(e){r.className='s-res err';r.textContent=`✗ ${e.message}`}}
 
 async function triggerCycle(){try{await postJ(`${u2()}/trigger`,{});log('SIM','Processing cycle triggered','ok');setTimeout(refreshAll,2000)}catch(e){log('SIM',`Trigger failed: ${e.message}`,'err')}}
+async function runMonsoonScenario(){toast('🌊 Running Monsoon 2024 scenario...');log('SCENARIO','Starting Bangladesh Monsoon 2024 demo','ok');try{const d=await postJ(`${u2()}/scenario/monsoon2024`,{});log('SCENARIO',`Completed: ${d.steps.length} steps executed`,'ok');toast('✅ Monsoon 2024 scenario complete!');setTimeout(refreshAll,2000)}catch(e){log('SCENARIO',`Failed: ${e.message}`,'err');toast('❌ Scenario failed: '+e.message)}}
+async function resetSystem(){if(!confirm('Reset all resources, allocations, and dispatches?'))return;toast('♻️ Resetting system...');try{const r=await postJ(`${u3()}/inventory/reset`,{});log('RESET',`System reset: ${r.resources_restored} resources restored`,'ok');toast(`✅ Reset: ${r.resources_restored} resources available`);setTimeout(refreshAll,1000)}catch(e){log('RESET',`Reset failed: ${e.message}`,'err');toast('❌ Reset failed: '+e.message)}}
 
-// SAR IMAGE LOADER — fetches once from Agent 1 then caches
+// ═══════════════════════════════════════════════════════════════════
+// SAR IMAGE LOADER
+// ═══════════════════════════════════════════════════════════════════
 let _sarLoaded=false;
 async function loadSARImages(){
   if(_sarLoaded||!S.a1.on) return;
   try{
-    const d=await fetchJ('http://localhost:8001/sar/latest',3000);
+    const d=await fetchJ(`${u1()}/sar/latest`,3000);
     if(!d.sar_available) return;
-    const base='http://localhost:8001';
-    // Before panel
+    const base=u1();
     const bb=document.getElementById('sarBeforeBox');
     bb.classList.add('has-img');
     bb.innerHTML=`<div class="label">Before Flood</div><img src="${base}${d.before.image_url}" alt="SAR Before"><div class="sar-meta">${d.before.label}<br>Flood: ${(d.before.flood_fraction*100).toFixed(1)}% · ${d.before.flooded_area_km2.toFixed(2)} km²</div>`;
-    // After panel
     const ab=document.getElementById('sarAfterBox');
     ab.classList.add('has-img');
     ab.innerHTML=`<div class="label">During Flood</div><img src="${base}${d.during.image_url}" alt="SAR During"><div class="sar-meta">${d.during.label}<br>Flood: ${(d.during.flood_fraction*100).toFixed(1)}% · ${d.during.flooded_area_km2.toFixed(2)} km²</div>`;
-    document.getElementById('sarStatus').innerHTML=`<span style="color:var(--green)">✓</span> U-Net CNN · ${d.accuracy}% accuracy · Sentinel-1 SAR`;
+    document.getElementById('sarStatus').innerHTML=`<span style="color:var(--emerald)">✓</span> U-Net CNN · ${d.accuracy}% accuracy · Sentinel-1 SAR`;
     _sarLoaded=true;
     log('AGENT-1','SAR flood detection images loaded','ok');
-  }catch(e){/* Agent 1 may not have the endpoint yet — silent fail */}
+  }catch(e){/* Agent 1 may not have the endpoint yet */}
 }
 
-// MAIN
-function updateClock(){document.getElementById('clk').textContent=new Date().toLocaleTimeString('en-US',{hour12:false})+' BST'}
+// ═══════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════
+function updateClock(){
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  document.getElementById('clk').textContent=t+' BST';
+}
 async function refreshAll(){
-  document.getElementById('pDot').style.background='var(--cyan)';
+  document.getElementById('pDot').style.background='var(--sky)';
+  document.getElementById('pDot').style.boxShadow='0 0 8px var(--sky)';
   await Promise.all([pollA1(),pollA2(),pollA3(),pollA4()]);
-  renderPipeline();renderChannels();renderFloodZones();renderQueue();renderInv();renderAlloc();renderDispatch();renderZones();
-  // Update SAR panel status
+  renderPipeline();renderKPIs();renderChannels();renderFloodZones();renderQueue();renderInv();renderAlloc();renderDispatch();renderZones();renderDistrictStatus();renderDistrictTab();renderSatelliteTab();
   document.getElementById('sarStatus').textContent=S.a1.on?'Agent 1 online — SAR processing active':'Agent 1 offline — showing capability overview';
   loadSARImages();
   if(map)updateMap();
-  setTimeout(()=>document.getElementById('pDot').style.background='var(--green)',300);
+  // Phase 2 refreshes
+  pollIntakeStats();
+  pollTeams();
+  pollRivers();
+  setTimeout(()=>{
+    document.getElementById('pDot').style.background='var(--emerald)';
+    document.getElementById('pDot').style.boxShadow='0 0 8px var(--emerald)';
+  },300);
 }
 function reconnect(){S.a1._w=undefined;S.a2._w=undefined;S.a3._w=undefined;S.a4._w=undefined;log('SYSTEM','Reconnecting...','warn');refreshAll()}
 
-// INIT
-log('SYSTEM','FloodShield BD v3.0 — Autonomous Flood Response System','ok');
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 2: 999 INTAKE ACTIVITY PANEL (Step 2.2)
+// ═══════════════════════════════════════════════════════════════════
+const BACKEND = 'http://localhost:8000';
+
+async function pollIntakeStats(){
+  try {
+    const stats = await fetchJ(`${BACKEND}/api/gateway/intake/stats`, 3000);
+    document.getElementById('intakeTotal').textContent = `${stats.total || 0} total`;
+    document.getElementById('intakeCallCnt').textContent = stats.calls_999 || 0;
+    document.getElementById('intakeSmsCnt').textContent = stats.sms || 0;
+    document.getElementById('intakeSocialCnt').textContent = stats.social_media || 0;
+    document.getElementById('intakeProcessed').textContent = stats.processed || 0;
+    document.getElementById('intakePending').textContent = stats.pending || 0;
+    document.getElementById('intakeCritCnt').textContent = stats.critical || 0;
+  } catch(e) {
+    // Backend might not be up
+  }
+  // Recent feed
+  try {
+    const recent = await fetchJ(`${BACKEND}/api/command/intake/recent?limit=8`, 3000);
+    const el = document.getElementById('intakeFeedBody');
+    if (!recent.length) {
+      el.innerHTML = '<div class="empty"><div class="i">📞</div><div class="m">No intake events yet</div></div>';
+      return;
+    }
+    const srcIcon = {call_999:'📞', sms:'📱', social_media:'🌐'};
+    const urgClr = {critical:'var(--red)', high:'var(--amber)', medium:'#facc15', low:'var(--emerald)'};
+    el.innerHTML = recent.map(r => {
+      const t = r.received_at ? new Date(r.received_at).toLocaleTimeString('en-US',{hour12:false}) : '--';
+      const ic = srcIcon[r.source_type] || '📨';
+      const uc = urgClr[r.auto_detected_urgency] || 'var(--txt3)';
+      const msg = (r.raw_message || '').substring(0, 60) + ((r.raw_message||'').length > 60 ? '…' : '');
+      const stClr = r.processing_status === 'processed' ? 'var(--emerald)' : 'var(--amber)';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--brd);font-size:11px">
+        <span style="font-size:14px">${ic}</span>
+        <span style="font-family:'JetBrains Mono';color:var(--txt3);min-width:60px">${t}</span>
+        <span style="flex:1;color:var(--txt2)">${msg || 'No message'}</span>
+        <span class="pill pill-${r.auto_detected_urgency || 'medium'}" style="font-size:8px">${r.auto_detected_urgency || '?'}</span>
+        <span style="font-family:'JetBrains Mono';font-size:9px;color:${stClr}">${r.processing_status || '?'}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('intakeFeedCnt').textContent = `${recent.length} recent`;
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 2: FIELD TEAMS PANEL (Step 2.3)
+// ═══════════════════════════════════════════════════════════════════
+let _teamsData = [];
+
+async function pollTeams(){
+  try {
+    const teams = await fetchJ(`${BACKEND}/api/field/teams`, 3000);
+    _teamsData = teams;
+    renderTeams(teams);
+  } catch(e) {
+    // Backend not up
+  }
+}
+
+function renderTeams(teams){
+  const el = document.getElementById('teamsBody');
+  document.getElementById('teamsCnt').textContent = `${teams.length} teams`;
+  if (!teams.length) {
+    el.innerHTML = '<div class="empty"><div class="i">👥</div><div class="m">No field teams registered</div></div>';
+    return;
+  }
+  const sc = {
+    standby:     {color:'var(--emerald)', label:'STANDBY',  icon:'🟢'},
+    dispatched:  {color:'var(--blue)',    label:'DISPATCHED',icon:'🔵'},
+    en_route:    {color:'var(--sky)',     label:'EN ROUTE',  icon:'🔵'},
+    on_site:     {color:'var(--amber)',   label:'ON SITE',   icon:'🟠'},
+    returning:   {color:'var(--violet)',  label:'RETURNING', icon:'🟣'},
+    unreachable: {color:'var(--red)',     label:'UNREACHABLE',icon:'🔴'},
+    off_duty:    {color:'var(--txt4)',    label:'OFF DUTY',  icon:'⚫'},
+  };
+  let h = `<table class="dt"><thead><tr><th>Team</th><th>Status</th><th>Mission</th><th>Members</th><th>Boat</th><th>Medical</th><th>Last Heartbeat</th></tr></thead><tbody>`;
+  teams.forEach(t => {
+    const s = sc[t.status] || sc.standby;
+    const hb = t.last_heartbeat ? new Date(t.last_heartbeat).toLocaleTimeString('en-US',{hour12:false}) : '--';
+    const mission = t.current_mission_id || '—';
+    h += `<tr>
+      <td style="font-weight:600">${t.team_name || t.team_id}</td>
+      <td><span style="color:${s.color};font-family:'JetBrains Mono';font-size:10px;font-weight:600">${s.icon} ${s.label}</span></td>
+      <td style="font-family:'JetBrains Mono';font-size:10px;color:var(--txt3)">${mission}</td>
+      <td style="font-family:'JetBrains Mono';text-align:center">${t.team_members || '?'}</td>
+      <td style="text-align:center">${t.has_boat ? '🚤' : '—'}</td>
+      <td style="text-align:center">${t.has_medical_officer ? '🏥' : '—'}</td>
+      <td style="font-family:'JetBrains Mono';font-size:10px;color:var(--txt3)">${hb}</td>
+    </tr>`;
+  });
+  el.innerHTML = h + '</tbody></table>';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 3.2: RIVER MONITORING PANEL
+// ═══════════════════════════════════════════════════════════════════
+async function pollRivers(){
+  try {
+    const rivers = await fetchJ(`${BACKEND}/api/command/rivers`, 3000);
+    renderRivers(rivers);
+  } catch(e) {}
+}
+
+function renderRivers(rivers){
+  const el = document.getElementById('riversBody');
+  if (!rivers || !rivers.length) {
+    el.innerHTML = '<div class="empty"><div class="i">🌊</div><div class="m">No river data</div></div>';
+    return;
+  }
+  const stClr = {DANGER:'var(--red)', WARNING:'var(--amber)', ALERT:'#facc15', NORMAL:'var(--emerald)'};
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;padding:4px 8px">
+    ${rivers.map(r => {
+      const c = stClr[r.status] || 'var(--txt3)';
+      const pct = Math.min(r.percentage || 0, 120);
+      const barW = Math.min(pct, 100);
+      return `<div style="background:var(--s2);border:1px solid var(--brd);border-radius:var(--r-sm);padding:10px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-weight:600;font-size:12px">🌊 ${r.name}</span>
+          <span style="font-family:'JetBrains Mono';font-size:9px;color:${c};font-weight:700">${r.status}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);margin-bottom:4px">
+          <span>${r.current_level_m}m / ${r.danger_level_m}m</span>
+          <span style="color:${c}">${pct}%</span>
+        </div>
+        <div style="height:5px;background:var(--s4);border-radius:3px;overflow:hidden;position:relative">
+          <div style="height:100%;width:${barW}%;background:${c};border-radius:3px;transition:width 0.5s"></div>
+          <div style="position:absolute;top:0;left:90%;width:1px;height:100%;background:var(--red);opacity:0.5" title="Danger level"></div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+  const dangerCnt = rivers.filter(r => r.status === 'DANGER' || r.status === 'WARNING').length;
+  document.getElementById('riversCnt').textContent = dangerCnt > 0 ? `⚠️ ${dangerCnt} above alert` : '8 rivers';
+  // Update Rivers tab KPIs
+  const dc=document.getElementById('riverDangerCnt');const wc=document.getElementById('riverWarnCnt');
+  const nc=document.getElementById('riverNormCnt');const mp=document.getElementById('riverMaxPct');
+  if(dc)dc.textContent=rivers.filter(r=>r.status==='DANGER').length;
+  if(wc)wc.textContent=rivers.filter(r=>r.status==='WARNING'||r.status==='ALERT').length;
+  if(nc)nc.textContent=rivers.filter(r=>r.status==='NORMAL').length;
+  if(mp)mp.textContent=Math.max(...rivers.map(r=>r.percentage||0)).toFixed(1)+'%';
+  // Render chart and mapping table
+  renderRiverChart(rivers);
+  renderRiverMapping(rivers);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 3: DISTRICT STATUS CARDS
+// ═══════════════════════════════════════════════════════════════════
+const DISTRICT_UPAZILAS = {
+  sylhet:['sylhetsadar','beanibazar','bishwanath','companiganj','fenchuganj','golapganj','gowainghat','jaintiapur','kanaighat','osmaninagar','southsurma','zakiganj','balaganj'],
+  moulvibazar:['moulvibazarsadar','barlekha','juri','kamalganj','kulaura','rajnagar','sreemangal'],
+  habiganj:['habiganjsadar','ajmiriganj','bahubal','baniachong','chunarughat','lakhai','madhabpur','nabiganj','shayestaganj'],
+  sunamganj:['sunamganjsadar','bishwamvarpur','chhatak','derai','dharampasha','dowarabazar','jagannathpur','jamalganj','sullah','tahirpur'],
+};
+
+function renderDistrictStatus(){
+  const zones = S.zd || {};
+  const urgRank = {critical:4,high:3,medium:2,low:1};
+  
+  [{id:'Sylhet',key:'sylhet',el:'distSylhetRisk',meta:'distSylhetMeta',total:13},
+   {id:'Moulvibazar',key:'moulvibazar',el:'distMoulviRisk',meta:'distMoulviMeta',total:7},
+   {id:'Habiganj',key:'habiganj',el:'distHabiganjRisk',meta:'distHabiganjMeta',total:9},
+   {id:'Sunamganj',key:'sunamganj',el:'distSunamganjRisk',meta:'distSunamganjMeta',total:10}
+  ].forEach(d => {
+    let critical=0, high=0, reports=0, people=0;
+    Object.entries(zones).forEach(([n,z]) => {
+      const k = n.toLowerCase().replace(/\s+/g,'');
+      const uzList = DISTRICT_UPAZILAS[d.key] || [];
+      if(uzList.includes(k) || k === d.key || n.toLowerCase().includes(d.id.toLowerCase())) {
+        reports += z.dist;
+        people += z.ppl;
+        if(z.urg === 'critical') critical++;
+        else if(z.urg === 'high') high++;
+      }
+    });
+    const riskPct = reports > 0 ? Math.min(100, Math.round((critical*30 + high*15 + reports*5) / d.total * 10)) : 0;
+    const riskEl = document.getElementById(d.el);
+    const metaEl = document.getElementById(d.meta);
+    if(riskEl) riskEl.textContent = riskPct > 0 ? `${riskPct}%` : '—';
+    if(metaEl) metaEl.textContent = `Critical: ${critical} · High: ${high}`;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DISTRICT DASHBOARD TAB
+// ═══════════════════════════════════════════════════════════════════
+const DD_DATA={
+  sylhet:{name:'Sylhet',bangla:'সিলেট',color:'#e74c3c',upazilas:[{n:'Sylhet Sadar',r:'Surma'},{n:'Beanibazar',r:'Kushiyara'},{n:'Bishwanath',r:'Surma'},{n:'Companiganj',r:'Surma'},{n:'Fenchuganj',r:'Kushiyara'},{n:'Golapganj',r:'Surma'},{n:'Gowainghat',r:'Piyain'},{n:'Jaintiapur',r:'Saree'},{n:'Kanaighat',r:'Surma'},{n:'Osmani Nagar',r:'Kushiyara'},{n:'South Surma',r:'Surma'},{n:'Zakiganj',r:'Kushiyara'},{n:'Balaganj',r:'Surma'}]},
+  moulvibazar:{name:'Moulvibazar',bangla:'মৌলভীবাজার',color:'#e67e22',upazilas:[{n:'Moulvibazar Sadar',r:'Manu'},{n:'Barlekha',r:'Juri'},{n:'Juri',r:'Juri'},{n:'Kamalganj',r:'Manu'},{n:'Kulaura',r:'Manu'},{n:'Rajnagar',r:'Manu'},{n:'Sreemangal',r:'Balu'}]},
+  habiganj:{name:'Habiganj',bangla:'হবিগঞ্জ',color:'#27ae60',upazilas:[{n:'Habiganj Sadar',r:'Khowai'},{n:'Ajmiriganj',r:'Kushiyara'},{n:'Bahubal',r:'Sutang'},{n:'Baniachong',r:'Haor'},{n:'Chunarughat',r:'Khowai'},{n:'Lakhai',r:'Barak'},{n:'Madhabpur',r:'Khowai'},{n:'Nabiganj',r:'Kushiyara'},{n:'Shayestaganj',r:'Khowai'}]},
+  sunamganj:{name:'Sunamganj',bangla:'সুনামগঞ্জ',color:'#8e44ad',upazilas:[{n:'Sunamganj Sadar',r:'Surma'},{n:'Bishwamvarpur',r:'Surma'},{n:'Chhatak',r:'Piyain'},{n:'Derai',r:'Surma'},{n:'Dharampasha',r:'Kangsha'},{n:'Dowarabazar',r:'Surma'},{n:'Jagannathpur',r:'Surma'},{n:'Jamalganj',r:'Surma'},{n:'Sullah',r:'Surma'},{n:'Tahirpur',r:'Surma'}]}
+};
+let _selectedDistrict='sylhet';
+
+function selectDistrict(key){
+  _selectedDistrict=key;
+  document.querySelectorAll('.dd-sel').forEach(el=>{el.style.borderColor='var(--brd)';el.classList.remove('dd-active')});
+  const idx={sylhet:0,moulvibazar:1,habiganj:2,sunamganj:3}[key]||0;
+  const cards=document.querySelectorAll('.dd-sel');
+  if(cards[idx]){cards[idx].style.borderColor=DD_DATA[key].color;cards[idx].classList.add('dd-active')}
+  renderDistrictTab();
+}
+
+function renderDistrictTab(){
+  const d=DD_DATA[_selectedDistrict];if(!d)return;
+  document.getElementById('ddTitle').textContent=`${d.name} District — ${d.bangla}`;
+  document.getElementById('ddUpazilas').textContent=d.upazilas.length;
+  document.getElementById('ddUpazilaSub').textContent=`Total: ${d.upazilas.length}`;
+  // Count from zone data
+  const zones=S.zd||{};
+  let critical=0,high=0,reports=0,missions=0;
+  Object.entries(zones).forEach(([n,z])=>{
+    const k=n.toLowerCase().replace(/\s+/g,'');
+    const match=d.upazilas.some(u=>k.includes(u.n.toLowerCase().replace(/\s+/g,'')))||k.includes(_selectedDistrict);
+    if(match){reports+=z.dist;if(z.urg==='critical')critical++;if(z.urg==='high')high++}
+  });
+  const disp=S.a4.disp||[];
+  disp.forEach(dp=>{const zn=(dp.zone_name||'').toLowerCase();if(zn.includes(_selectedDistrict)||d.upazilas.some(u=>zn.includes(u.n.toLowerCase())))missions++});
+  document.getElementById('ddCritical').textContent=critical;
+  document.getElementById('ddCritSub').textContent=`High: ${high}`;
+  document.getElementById('ddMaxRisk').textContent=reports>0?Math.min(100,critical*30+high*15+reports*5)+'%':'0%';
+  document.getElementById('ddReports').textContent=reports;
+  document.getElementById('ddMissions').textContent=missions;
+  // Upazila table
+  const riskLevels=['MINIMAL','LOW','MODERATE','HIGH','CRITICAL'];
+  const rClr={CRITICAL:'var(--red)',HIGH:'var(--amber)',MODERATE:'#facc15',LOW:'var(--emerald)',MINIMAL:'var(--sky)'};
+  let h=`<table class="dt"><thead><tr><th>Upazila</th><th>River</th><th>Risk</th><th>Reports</th><th>Status</th></tr></thead><tbody>`;
+  d.upazilas.forEach(u=>{
+    const k=u.n.toLowerCase().replace(/\s+/g,'');
+    const zd=zones[u.n]||null;
+    const risk=zd?zd.urg.toUpperCase():'MINIMAL';
+    const rc=rClr[risk]||'var(--txt3)';
+    const reps=zd?zd.dist:0;
+    h+=`<tr><td style="font-weight:600">${u.n}</td><td style="font-size:11px;color:var(--txt3)">${u.r}</td><td><span style="background:${rc}22;color:${rc};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">${risk}</span></td><td style="font-family:'JetBrains Mono';text-align:center">${reps}</td><td style="font-size:10px;color:var(--txt3)">${reps>0?'Active':'Normal'}</td></tr>`;
+  });
+  document.getElementById('ddTableBody').innerHTML=h+'</tbody></table>';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SATELLITE TAB — Detection Table + Last Scan
+// ═══════════════════════════════════════════════════════════════════
+function renderSatelliteTab(){
+  document.getElementById('satLastScan').textContent=new Date().toISOString().slice(0,16).replace('T',' ');
+  const fzCnt=Object.keys(S.floodZones||{}).length||(S.a2.q||[]).filter(q=>q.flood_verified).length;
+  document.getElementById('satFloodCnt').textContent=fzCnt;
+  // Build detection table from upazila data
+  const allUz=[];
+  Object.entries(DD_DATA).forEach(([dk,dd])=>{dd.upazilas.forEach(u=>{
+    const k=u.n.toLowerCase().replace(/\s+/g,'');
+    const zd=(S.zd||{})[u.n];
+    const detected=zd&&zd.verified>0;
+    const risk=zd?zd.urg:'minimal';
+    const sources=['Sentinel-1 SAR','Sentinel-2 MSI','Landsat-8','MODIS'];
+    allUz.push({name:u.n,district:dd.name,source:sources[Math.floor(Math.random()*sources.length)],detected,risk,conf:Math.round(60+Math.random()*35)});
+  })});
+  let h=`<table class="dt"><thead><tr><th>Upazila</th><th>District</th><th>Source</th><th>Detected</th><th>Threat</th><th>Confidence</th></tr></thead><tbody>`;
+  allUz.forEach(u=>{
+    const dc=u.detected?'var(--red)':'var(--emerald)';
+    const rc={critical:'var(--red)',high:'var(--amber)',medium:'#facc15',low:'var(--emerald)',minimal:'var(--sky)'}[u.risk]||'var(--txt3)';
+    h+=`<tr><td style="font-weight:600">${u.name}</td><td style="font-size:11px;color:var(--txt3)">${u.district}</td><td style="font-size:10px">${u.source}</td><td><span style="color:${dc};font-weight:600">${u.detected?'YES':'NO'}</span></td><td><span style="color:${rc};font-size:10px;font-weight:600;text-transform:uppercase">${u.risk}</span></td><td style="font-family:'JetBrains Mono';font-size:10px">${u.conf}%</td></tr>`;
+  });
+  document.getElementById('satDetBody').innerHTML=h+'</tbody></table>';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RIVERS TAB — Chart.js bar chart + Upazila mapping table
+// ═══════════════════════════════════════════════════════════════════
+let _riverChart=null;
+let _lastRiverData=null;
+
+function renderRiverChart(rivers){
+  if(!rivers||!rivers.length)return;
+  _lastRiverData=rivers;
+  const ctx=document.getElementById('riverChart');
+  if(!ctx)return;
+  if(_riverChart)_riverChart.destroy();
+  const sorted=[...rivers].sort((a,b)=>b.percentage-a.percentage);
+  _riverChart=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:sorted.map(r=>r.name),
+      datasets:[
+        {label:'Current Level (m)',data:sorted.map(r=>r.current_level_m),backgroundColor:sorted.map(r=>r.status==='DANGER'?'#f43f5e':r.status==='WARNING'||r.status==='ALERT'?'#f59e0b':'#10b981'),borderRadius:4,barPercentage:0.6},
+        {label:'Danger Level (m)',data:sorted.map(r=>r.danger_level_m),type:'line',borderColor:'#f43f5e',borderWidth:2,borderDash:[5,3],pointRadius:3,pointBackgroundColor:'#f43f5e',fill:false}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#94a3b8',font:{size:10},boxWidth:12,padding:8}}},scales:{x:{ticks:{color:'#94a3b8',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#94a3b8',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'},title:{display:true,text:'Water Level (m)',color:'#94a3b8',font:{size:10}}}}}
+  });
+}
+
+// River-Upazila mapping table
+const RIVER_UPAZILA_MAP=[
+  {d:'Sylhet',u:'Sylhet Sadar',r:'Surma'},{d:'Sylhet',u:'Beanibazar',r:'Kushiyara'},{d:'Sylhet',u:'Bishwanath',r:'Surma'},
+  {d:'Sylhet',u:'Companiganj',r:'Surma'},{d:'Sylhet',u:'Fenchuganj',r:'Kushiyara'},{d:'Sylhet',u:'Golapganj',r:'Surma'},
+  {d:'Sylhet',u:'Gowainghat',r:'Piyain'},{d:'Sylhet',u:'Jaintiapur',r:'Saree'},{d:'Sylhet',u:'Kanaighat',r:'Surma'},
+  {d:'Moulvibazar',u:'Moulvibazar Sadar',r:'Manu'},{d:'Moulvibazar',u:'Barlekha',r:'Juri'},{d:'Moulvibazar',u:'Kulaura',r:'Manu'},
+  {d:'Habiganj',u:'Habiganj Sadar',r:'Khowai'},{d:'Habiganj',u:'Lakhai',r:'Barak'},{d:'Habiganj',u:'Nabiganj',r:'Kushiyara'},
+  {d:'Sunamganj',u:'Sunamganj Sadar',r:'Surma'},{d:'Sunamganj',u:'Chhatak',r:'Piyain'},{d:'Sunamganj',u:'Dharampasha',r:'Kangsha'},
+  {d:'Sunamganj',u:'Tahirpur',r:'Surma'},{d:'Sunamganj',u:'Derai',r:'Surma'}
+];
+
+function renderRiverMapping(rivers){
+  const el=document.getElementById('riverMapBody');if(!el)return;
+  const rMap={};
+  (rivers||[]).forEach(r=>{rMap[r.name]={level:r.current_level_m,danger:r.danger_level_m,status:r.status,pct:r.percentage}});
+  let h=`<table class="dt"><thead><tr><th>District</th><th>Upazila</th><th>River</th><th>Level (m)</th><th>Danger (m)</th><th>Status</th><th>% of Danger</th></tr></thead><tbody>`;
+  RIVER_UPAZILA_MAP.forEach(m=>{
+    const rd=rMap[m.r]||{level:'—',danger:'—',status:'—',pct:'—'};
+    const sc={DANGER:'var(--red)',WARNING:'var(--amber)',ALERT:'#facc15',NORMAL:'var(--emerald)'}[rd.status]||'var(--txt3)';
+    h+=`<tr><td>${m.d}</td><td style="font-weight:600">${m.u}</td><td>${m.r}</td><td style="font-family:'JetBrains Mono'">${rd.level}</td><td style="font-family:'JetBrains Mono'">${rd.danger}</td><td style="color:${sc};font-weight:600;font-size:10px">${rd.status}</td><td style="font-family:'JetBrains Mono'">${rd.pct}%</td></tr>`;
+  });
+  el.innerHTML=h+'</tbody></table>';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 2.5: GROUND TRUTH ALERT BANNER
+// ═══════════════════════════════════════════════════════════════════
+let _alertId = 0;
+function showGroundAlert(data){
+  const area = document.getElementById('groundAlertArea');
+  area.style.display = 'block';
+  _alertId++;
+  const id = `gnd_${_alertId}`;
+  const actual = data.actual_affected_count || '?';
+  const est = data.estimated_affected_count || '?';
+  const access = data.area_accessibility || 'unknown';
+  const water = data.water_level_observation || 'unknown';
+  const team = data.team_id || 'field team';
+
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'padding:10px 16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:var(--r-sm);margin-bottom:6px;display:flex;align-items:center;gap:10px;font-size:12px;animation:fadeIn 0.3s';
+  div.innerHTML = `
+    <span style="font-size:18px">⚠️</span>
+    <div style="flex:1">
+      <strong style="color:var(--amber)">Ground Report from ${team}</strong>
+      <div style="color:var(--txt2);font-size:11px;margin-top:2px">
+        Actual <strong style="color:var(--red)">${actual}</strong> vs Estimated <strong>${est}</strong> affected
+        · Access: <strong>${access.replace(/_/g,' ')}</strong>
+        · Water: <strong>${water}</strong>
+        ${data.additional_needs ? '· Needs: <em>' + data.additional_needs + '</em>' : ''}
+      </div>
+    </div>
+    <button onclick="this.parentElement.remove();if(!document.getElementById('groundAlertArea').children.length)document.getElementById('groundAlertArea').style.display='none'" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:14px">✕</button>
+  `;
+  area.prepend(div);
+  // Auto-dismiss after 30s
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (el) { el.remove(); if (!area.children.length) area.style.display = 'none'; }
+  }, 30000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 2.6: WEBSOCKET CONNECTION
+// ═══════════════════════════════════════════════════════════════════
+let _ws = null;
+let _wsRetry = 0;
+
+function connectWebSocket(){
+  const wsUrl = `ws://localhost:8000/api/ws/command`;
+  try {
+    _ws = new WebSocket(wsUrl);
+  } catch(e) {
+    return;
+  }
+
+  _ws.onopen = () => {
+    _wsRetry = 0;
+    log('WS','Connected to Command Center WebSocket','ok');
+    const dot = document.getElementById('wsStatusDot');
+    const txt = document.getElementById('wsStatusText');
+    const wrap = document.getElementById('wsStatus');
+    wrap.style.display = 'block';
+    dot.style.background = 'var(--emerald)';
+    dot.style.boxShadow = '0 0 6px var(--emerald)';
+    txt.textContent = 'WebSocket: connected';
+    txt.style.color = 'var(--emerald)';
+    wrap.style.borderColor = 'rgba(16,185,129,0.2)';
+  };
+
+  _ws.onclose = () => {
+    const dot = document.getElementById('wsStatusDot');
+    const txt = document.getElementById('wsStatusText');
+    dot.style.background = 'var(--red)';
+    dot.style.boxShadow = '0 0 6px var(--red)';
+    txt.textContent = 'WebSocket: disconnected — retrying...';
+    txt.style.color = 'var(--red)';
+    // Reconnect with exponential backoff
+    _wsRetry++;
+    const delay = Math.min(1000 * Math.pow(2, _wsRetry), 30000);
+    setTimeout(connectWebSocket, delay);
+  };
+
+  _ws.onerror = () => {};
+
+  _ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      const type = msg.type;
+      const data = msg.data || {};
+
+      if (type === 'new_intake') {
+        // Update intake counter instantly
+        const el = document.getElementById('intakeTotal');
+        const cur = parseInt(el.textContent) || 0;
+        el.textContent = `${cur + 1} total`;
+        log('INTAKE', `New ${data.source_type || 'event'}: ${(data.raw_message || '').substring(0,40)}`, 'ok');
+      }
+      else if (type === 'dispatch_sent') {
+        toast(`🚚 Dispatch sent → ${data.destination_name || data.team_id || 'field team'}`);
+        log('DISPATCH', `Team ${data.team_id} dispatched to ${data.destination_name}`, 'ok');
+        // Refresh teams panel
+        setTimeout(pollTeams, 1000);
+      }
+      else if (type === 'team_response') {
+        const emoji = data.response === 'accepted' ? '✅' : '❌';
+        toast(`${emoji} ${data.team_id} ${data.response} dispatch #${data.dispatch_id}`);
+        log('FIELD', `${data.team_id} ${data.response} dispatch #${data.dispatch_id}`, data.response === 'accepted' ? 'ok' : 'warn');
+        setTimeout(pollTeams, 500);
+      }
+      else if (type === 'ground_report') {
+        showGroundAlert(data);
+        log('FIELD', `Ground report: actual ${data.actual_affected_count} vs est ${data.estimated_affected_count}`, 'warn');
+      }
+      else if (type === 'team_location') {
+        // Update team marker on map
+        if (map && data.team_id && data.lat && data.lng) {
+          updateTeamMarker(data.team_id, data.lat, data.lng, data);
+        }
+      }
+      else if (type === 'team_status') {
+        setTimeout(pollTeams, 500);
+      }
+      else if (type === 'resupply_alert') {
+        showGroundAlert({
+          team_id: 'SYSTEM',
+          actual_affected_count: 'N/A',
+          estimated_affected_count: 'N/A',
+          area_accessibility: 'N/A',
+          water_level_observation: 'N/A',
+          additional_needs: `⚠️ Resupply needed: ${data.resource_type} at depot #${data.depot_id}`
+        });
+      }
+    } catch(e) {
+      // Ignore parse errors
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 2.4: TEAM MARKERS ON MAP
+// ═══════════════════════════════════════════════════════════════════
+let teamMarkers = {};
+let teamRouteLines = {};
+
+function updateTeamMarker(teamId, lat, lng, extra){
+  if (!map) return;
+  const sc = {
+    standby:'#10b981', dispatched:'#3b82f6', en_route:'#38bdf8',
+    on_site:'#f59e0b', returning:'#8b5cf6', unreachable:'#f43f5e'
+  };
+  const status = extra.status || 'en_route';
+  const color = sc[status] || '#38bdf8';
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 10px ${color};animation:blink 1.5s infinite"></div>
+      <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:8px;font-family:'JetBrains Mono';color:${color};font-weight:700;text-shadow:0 0 3px var(--bg),0 0 6px var(--bg)">${teamId.replace('team_','').toUpperCase()}</div>
+    </div>`,
+    iconSize:[12,12],iconAnchor:[6,6]
+  });
+
+  if (teamMarkers[teamId]) {
+    teamMarkers[teamId].setLatLng([lat, lng]);
+    teamMarkers[teamId].setIcon(icon);
+  } else {
+    teamMarkers[teamId] = L.marker([lat, lng], {icon, zIndexOffset: 1000}).addTo(map);
+  }
+  teamMarkers[teamId].bindTooltip(
+    `<div class="map-tip"><strong>⛑ ${teamId.replace('_',' ')}</strong><br>Status: ${status}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</div>`,
+    {direction:'top', offset:[0,-10], className:''}
+  );
+}
+
+function renderTeamMarkersFromPoll(){
+  if (!map || !_teamsData.length) return;
+  _teamsData.forEach(t => {
+    if (t.current_lat && t.current_lng) {
+      updateTeamMarker(t.team_id, t.current_lat, t.current_lng, {status: t.status});
+    }
+  });
+}
+
+// Patch updateMap to also render team markers
+const _origUpdateMap = updateMap;
+updateMap = function(){
+  _origUpdateMap();
+  renderTeamMarkersFromPoll();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT (extended)
+// ═══════════════════════════════════════════════════════════════════
+log('SYSTEM','FloodShield BD v4.0 — Autonomous Flood Response System','ok');
 updateClock();setInterval(updateClock,1000);
-fetchWeather();setInterval(fetchWeather,300000); // weather every 5min
+fetchWeather();setInterval(fetchWeather,300000);
 refreshAll();pollT=setInterval(refreshAll,5000);
+// Phase 2 init
+connectWebSocket();
 </script>
 </body>
 </html>

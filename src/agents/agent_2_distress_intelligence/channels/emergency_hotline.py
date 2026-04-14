@@ -35,6 +35,26 @@ ZONE_COORDS = {
     "demra":        {"lat": 23.7225, "lon": 90.4968, "name": "Demra"},
     "sylhet":       {"lat": 24.8949, "lon": 91.8687, "name": "Sylhet"},
     "sunamganj":    {"lat": 25.0715, "lon": 91.3950, "name": "Sunamganj"},
+    # Sylhet Division upazilas
+    "tahirpur":     {"lat": 25.11,   "lon": 91.42,   "name": "তাহিরপুর"},
+    "companiganj":  {"lat": 25.0456, "lon": 91.5234, "name": "কোম্পানীগঞ্জ"},
+    "chhatak":      {"lat": 25.168,  "lon": 91.655,  "name": "ছাতক"},
+    "jamalganj":    {"lat": 25.15,   "lon": 91.25,   "name": "জামালগঞ্জ"},
+    "dirai":        {"lat": 25.02,   "lon": 91.32,   "name": "দিরাই"},
+    "dharmapasha":  {"lat": 25.10,   "lon": 91.28,   "name": "ধর্মপাশা"},
+    "dowarabazar":  {"lat": 25.11,   "lon": 91.73,   "name": "দোয়ারাবাজার"},
+    "bishwamvarpur":{"lat": 25.19,   "lon": 91.58,   "name": "বিশ্বম্ভরপুর"},
+    "madhobpur":    {"lat": 24.75,   "lon": 91.82,   "name": "মাধবপুর"},
+}
+
+# Bengali zone name aliases for matching scenario location_description
+ZONE_ALIASES_BN = {
+    "সুনামগঞ্জ": "sunamganj", "সিলেট": "sylhet",
+    "তাহিরপুর": "tahirpur", "কোম্পানীগঞ্জ": "companiganj",
+    "ছাতক": "chhatak", "জামালগঞ্জ": "jamalganj",
+    "দিরাই": "dirai", "ধর্মপাশা": "dharmapasha",
+    "দোয়ারাবাজার": "dowarabazar", "বিশ্বম্ভরপুর": "bishwamvarpur",
+    "মাধবপুর": "madhobpur", "আম্বরখানা": "sylhet", "টিলাগড়": "sylhet",
 }
 
 
@@ -73,9 +93,24 @@ class EmergencyHotlineChannel(BaseChannel):
     def _parse_call_record(self, call: Dict[str, Any]) -> Optional[RawDistressReport]:
         """Parse a single 999 call record."""
         
-        # Zone resolution
+        # Zone resolution — try English key first, then Bengali alias matching
         zone_key = call.get("zone", "").lower()
         zone_info = ZONE_COORDS.get(zone_key)
+        
+        # If direct lookup fails, try matching Bengali zone names from location description
+        if not zone_info:
+            zone_text = call.get("zone", "")
+            loc_desc = call.get("location_description", zone_text)
+            for bn_name, en_key in ZONE_ALIASES_BN.items():
+                if bn_name in loc_desc or bn_name in zone_text:
+                    zone_info = ZONE_COORDS.get(en_key)
+                    zone_key = en_key
+                    break
+        
+        # Use scenario pinpoint coordinates if available
+        scenario_lat = call.get("scenario_lat")
+        scenario_lng = call.get("scenario_lng")
+        loc_desc = call.get("location_description", call.get("zone", ""))
         
         # Water level (call records typically report in feet)
         water_ft = call.get("water_level_ft")
@@ -114,15 +149,25 @@ class EmergencyHotlineChannel(BaseChannel):
         if not notes:
             notes = f"999 call: {dtype.value} in {zone_key}, urgency={urgency.value}"
         
-        location = DistressLocation(
-            latitude=zone_info["lat"] if zone_info else None,
-            longitude=zone_info["lon"] if zone_info else None,
-            zone_name=zone_info["name"] if zone_info else zone_key,
-            zone_id=zone_key if zone_info else None,
-            address_text=call.get("address"),
-            # Cell tower triangulation gives moderate accuracy
-            confidence=0.7 if zone_info else 0.4,
-        )
+        if scenario_lat and scenario_lng:
+            location = DistressLocation(
+                latitude=scenario_lat,
+                longitude=scenario_lng,
+                zone_name=zone_info["name"] if zone_info else loc_desc or zone_key,
+                zone_id=zone_key if zone_info else None,
+                address_text=loc_desc or call.get("address"),
+                confidence=0.95,
+            )
+        else:
+            location = DistressLocation(
+                latitude=zone_info["lat"] if zone_info else None,
+                longitude=zone_info["lon"] if zone_info else None,
+                zone_name=zone_info["name"] if zone_info else zone_key,
+                zone_id=zone_key if zone_info else None,
+                address_text=call.get("address"),
+                # Cell tower triangulation gives moderate accuracy
+                confidence=0.7 if zone_info else 0.4,
+            )
         
         needs_rescue = dtype in (
             DistressType.STRANDED,

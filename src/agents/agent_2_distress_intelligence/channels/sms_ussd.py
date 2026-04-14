@@ -50,6 +50,16 @@ ZONE_COORDS = {
     "demra":        {"lat": 23.7225, "lon": 90.4968, "name": "Demra"},
     "sylhet":       {"lat": 24.8949, "lon": 91.8687, "name": "Sylhet"},
     "sunamganj":    {"lat": 25.0715, "lon": 91.3950, "name": "Sunamganj"},
+    # Sylhet Division upazilas
+    "tahirpur":     {"lat": 25.11,   "lon": 91.42,   "name": "তাহিরপুর"},
+    "companiganj":  {"lat": 25.0456, "lon": 91.5234, "name": "কোম্পানীগঞ্জ"},
+    "chhatak":      {"lat": 25.168,  "lon": 91.655,  "name": "ছাতক"},
+    "jamalganj":    {"lat": 25.15,   "lon": 91.25,   "name": "জামালগঞ্জ"},
+    "dirai":        {"lat": 25.02,   "lon": 91.32,   "name": "দিরাই"},
+    "dharmapasha":  {"lat": 25.10,   "lon": 91.28,   "name": "ধর্মপাশা"},
+    "dowarabazar":  {"lat": 25.11,   "lon": 91.73,   "name": "দোয়ারাবাজার"},
+    "bishwamvarpur":{"lat": 25.19,   "lon": 91.58,   "name": "বিশ্বম্ভরপুর"},
+    "madhobpur":    {"lat": 24.75,   "lon": 91.82,   "name": "মাধবপুর"},
 }
 
 # Aliases (people might type short forms in SMS)
@@ -61,6 +71,21 @@ ZONE_ALIASES = {
     "azampur": "uttara", "diabari": "uttara",
     "shyamoli": "mohammadpur", "adabor": "mohammadpur",
     "gulshan": "badda", "baridhara": "badda",
+    # Sylhet Division Bengali aliases
+    "সুনামগঞ্জ": "sunamganj", "সিলেট": "sylhet",
+    "তাহিরপুর": "tahirpur", "কোম্পানীগঞ্জ": "companiganj",
+    "ছাতক": "chhatak", "জামালগঞ্জ": "jamalganj",
+    "দিরাই": "dirai", "ধর্মপাশা": "dharmapasha",
+    "দোয়ারাবাজার": "dowarabazar", "বিশ্বম্ভরপুর": "bishwamvarpur",
+    "মাধবপুর": "madhobpur",
+    # Banglish aliases for Sylhet
+    "sunamgonj": "sunamganj", "sunamgonj": "sunamganj",
+    "companigonj": "companiganj", "kompaniganj": "companiganj",
+    "tahirpur": "tahirpur", "chatok": "chhatak",
+    "jamalgonj": "jamalganj", "dharmpasha": "dharmapasha",
+    "ambarkhana": "sylhet", "tilagar": "sylhet",
+    "আম্বরখানা": "sylhet", "টিলাগড়": "sylhet",
+    "সদর": "sunamganj",
 }
 
 # Situation codes
@@ -294,20 +319,46 @@ class SMSUSSDChannel(BaseChannel):
             parsed = parse_freetext_sms(text)
             msg_type = "free_text"
         
-        # Resolve zone
+        # Resolve zone from text
         zone_info = None
         if parsed.get("zone_text"):
             zone_info = resolve_zone(parsed["zone_text"])
         
-        # Build location
-        location = DistressLocation(
-            latitude=zone_info["lat"] if zone_info else None,
-            longitude=zone_info["lon"] if zone_info else None,
-            zone_name=zone_info["name"] if zone_info else None,
-            zone_id=zone_info["zone_id"] if zone_info else None,
-            address_text=parsed.get("zone_text"),
-            confidence=0.9 if zone_info else 0.2,
-        )
+        # If text-based zone detection failed, try matching Bengali location
+        # description from scenario data against known Bengali zone aliases
+        if not zone_info:
+            loc_desc = msg.get("location_description", "")
+            if loc_desc:
+                for alias, zone_id in ZONE_ALIASES.items():
+                    if alias in loc_desc:
+                        zone_info = {"zone_id": zone_id, **ZONE_COORDS[zone_id]}
+                        break
+        
+        # Use scenario pinpoint coordinates if available (highest accuracy)
+        scenario_lat = msg.get("scenario_lat")
+        scenario_lng = msg.get("scenario_lng")
+        loc_desc = msg.get("location_description", "")
+        
+        if scenario_lat and scenario_lng:
+            # Scenario provides exact coordinates — use them with high confidence
+            location = DistressLocation(
+                latitude=scenario_lat,
+                longitude=scenario_lng,
+                zone_name=zone_info["name"] if zone_info else loc_desc or None,
+                zone_id=zone_info["zone_id"] if zone_info else None,
+                address_text=loc_desc or parsed.get("zone_text"),
+                confidence=0.95,
+            )
+        else:
+            # Fall back to zone centroid
+            location = DistressLocation(
+                latitude=zone_info["lat"] if zone_info else None,
+                longitude=zone_info["lon"] if zone_info else None,
+                zone_name=zone_info["name"] if zone_info else None,
+                zone_id=zone_info["zone_id"] if zone_info else None,
+                address_text=parsed.get("zone_text"),
+                confidence=0.9 if zone_info else 0.2,
+            )
         
         water_level = parsed.get("water_level_m")
         people = parsed.get("people_count")

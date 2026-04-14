@@ -75,6 +75,73 @@ DHAKA_ZONES = {
         "keywords_bn": ["ডেমরা", "মাতুয়াইল"],
         "keywords_en": ["demra", "matuail"],
     },
+    # ── Sylhet Division ──
+    "sunamganj": {
+        "name": "সুনামগঞ্জ",
+        "lat": 25.0715, "lon": 91.3950,
+        "keywords_bn": ["সুনামগঞ্জ", "সুনামগন্জ", "সদর", "পশ্চিম পাড়া", "পূর্ব বাজার", "রণগোপালপুর", "দক্ষিণ পাড়া"],
+        "keywords_en": ["sunamganj", "sunamgonj"],
+    },
+    "sylhet": {
+        "name": "সিলেট",
+        "lat": 24.8949, "lon": 91.8687,
+        "keywords_bn": ["সিলেট", "আম্বরখানা", "টিলাগড়", "সুরমা তীর"],
+        "keywords_en": ["sylhet", "ambarkhana", "tilagar", "surma"],
+    },
+    "tahirpur": {
+        "name": "তাহিরপুর",
+        "lat": 25.11, "lon": 91.42,
+        "keywords_bn": ["তাহিরপুর"],
+        "keywords_en": ["tahirpur"],
+    },
+    "companiganj": {
+        "name": "কোম্পানীগঞ্জ",
+        "lat": 25.0456, "lon": 91.5234,
+        "keywords_bn": ["কোম্পানীগঞ্জ"],
+        "keywords_en": ["companiganj", "kompaniganj"],
+    },
+    "chhatak": {
+        "name": "ছাতক",
+        "lat": 25.168, "lon": 91.655,
+        "keywords_bn": ["ছাতক"],
+        "keywords_en": ["chhatak", "chatok"],
+    },
+    "jamalganj": {
+        "name": "জামালগঞ্জ",
+        "lat": 25.15, "lon": 91.25,
+        "keywords_bn": ["জামালগঞ্জ"],
+        "keywords_en": ["jamalganj", "jamalgonj"],
+    },
+    "dirai": {
+        "name": "দিরাই",
+        "lat": 25.02, "lon": 91.32,
+        "keywords_bn": ["দিরাই"],
+        "keywords_en": ["dirai"],
+    },
+    "dharmapasha": {
+        "name": "ধর্মপাশা",
+        "lat": 25.10, "lon": 91.28,
+        "keywords_bn": ["ধর্মপাশা"],
+        "keywords_en": ["dharmapasha", "dharmpasha"],
+    },
+    "dowarabazar": {
+        "name": "দোয়ারাবাজার",
+        "lat": 25.11, "lon": 91.73,
+        "keywords_bn": ["দোয়ারাবাজার"],
+        "keywords_en": ["dowarabazar"],
+    },
+    "bishwamvarpur": {
+        "name": "বিশ্বম্ভরপুর",
+        "lat": 25.19, "lon": 91.58,
+        "keywords_bn": ["বিশ্বম্ভরপুর"],
+        "keywords_en": ["bishwamvarpur", "bishwamborpur"],
+    },
+    "madhobpur": {
+        "name": "মাধবপুর",
+        "lat": 24.75, "lon": 91.82,
+        "keywords_bn": ["মাধবপুর"],
+        "keywords_en": ["madhobpur", "madhabpur"],
+    },
 }
 
 
@@ -307,14 +374,29 @@ class SocialMediaChannel(BaseChannel):
                 dtype = classify_distress_type(rescue, water_level, text)
                 
                 # Step 3: Build location
-                location = DistressLocation(
-                    latitude=zone["lat"] if zone else post.get("lat"),
-                    longitude=zone["lon"] if zone else post.get("lon"),
-                    zone_name=zone["name"] if zone else None,
-                    zone_id=zone["zone_id"] if zone else None,
-                    address_text=post.get("location_text"),
-                    confidence=0.8 if zone else 0.3,
-                )
+                # Use scenario pinpoint coords if available (highest accuracy)
+                scenario_lat = post.get("scenario_lat")
+                scenario_lng = post.get("scenario_lng")
+                loc_desc = post.get("location_description", "")
+                
+                if scenario_lat and scenario_lng:
+                    location = DistressLocation(
+                        latitude=scenario_lat,
+                        longitude=scenario_lng,
+                        zone_name=zone["name"] if zone else loc_desc or None,
+                        zone_id=zone["zone_id"] if zone else None,
+                        address_text=loc_desc or post.get("location_text"),
+                        confidence=0.95,
+                    )
+                else:
+                    location = DistressLocation(
+                        latitude=zone["lat"] if zone else post.get("lat"),
+                        longitude=zone["lon"] if zone else post.get("lon"),
+                        zone_name=zone["name"] if zone else None,
+                        zone_id=zone["zone_id"] if zone else None,
+                        address_text=post.get("location_text"),
+                        confidence=0.8 if zone else 0.3,
+                    )
                 
                 # Step 4: Build report
                 report = RawDistressReport(
